@@ -45,9 +45,17 @@
   - < 0.65:识别质量差(常见于爵士、电子、纯打击乐),建议人工核对或更换音频源
 - `chords[].section`:可选。结构分析模型(01b)给出的段落标签
   (intro/verse/chorus/bridge/outro 等),按和弦起始时间归属。
-- `bar` / `beat`:若提供了节拍对齐(可选步骤),标注该和弦起始落在第几小节第几拍;否则为 null。
-- `structure`(可选):`{engine, bpm, downbeats, segments}`,engine 为 `allin1`
-  (含段落标签)或 `madmom-beats`(仅节拍,无标签)。**乐段划分以此为准。**
+- `chords[].bass_pc`:可选。低音 stem 在该和弦区间的主导音级(0-11),
+  用于转位判定;`label` 里出现 `/X` 表示已确认的转位。
+- `chords[].key_context`:可选。该和弦所处的段落局部调性(拼写依据)。
+- `bar` / `beat`:小节号与拍位(来自 01b 的下拍对齐);无结构数据时为 null。
+- `structure`(可选):`{engine, bpm, meter, downbeats, segments}`。
+  `segments[].key` / `key_confidence` / `key_candidates` 为段落局部调性。
+  **乐段划分以此为准,engine 非 allin1 时无段落标签。**
+- `song.key_candidates`:调性候选(含 `tonic_evidence` 乐句终止音证据权重)。
+  `song.modulations`:全曲出现的所有调性。
+- `voices`(可选):`{melody_source, melody_notes, melody_pitch_class_profile,
+  melody_phrase_endings, bass_notes, bass_inversions}`。
 - `stats.chord_histogram`:按出现时长(秒)加权的和弦统计,四舍五入到 0.1s。
 
 ## 衍生文件
@@ -55,7 +63,10 @@
 | 文件 | 内容 |
 |---|---|
 | `<name>.chords.json` | 上面的标准格式(权威数据) |
+| `<name>.struct.json` | 结构模型原始输出(段落/拍/BPM/拍号) |
+| `<name>.voices.json` | 旋律音符 + 音级分布 + 乐句终止音 + 低音音符 |
 | `<name>.lab` | MIREX .lab 时间标签,便于外部工具(Sonic Visualiser 等) |
+| `<name>.map.md` | **和声地图**:小节网格 + 级数 + 段落进行 + 重复进行挖掘 |
 | `<name>.analysis.md` | LLM 生成的分析报告 |
 
 ## LLM 分析约定

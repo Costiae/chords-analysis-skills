@@ -74,20 +74,42 @@ If setup fails, report the error to the user; do not silently switch engines.
    <PY> -W ignore <skill-dir>/scripts/01b_structure.py audio/<file> --outdir out
    ```
    Uses all-in-one-infer (functional segments: intro/verse/chorus/bridge/outro +
-   beats + BPM). If unavailable, falls back to madmom beat tracking (no segment
-   labels — then say so instead of guessing). First run downloads model weights.
+   beats + downbeats + BPM + meter). If unavailable, falls back to madmom beat
+   tracking (no segment labels — then say so instead of guessing). Weights are
+   fetched from HuggingFace; on blocked networks use `HF_ENDPOINT=https://hf-mirror.com`
+   and pre-place the `harmonix-fold*.pth` files in `~/.cache/torch/hub/checkpoints`.
+2c. **Voices: melody + bass** (mode/key evidence and inversions):
+   ```
+   <PY> -W ignore <skill-dir>/scripts/01c_voices.py audio/<file> --outdir out
+   ```
+   Runs demucs once (cached in `<outdir>/.stems/`), then pyin pitch tracking on the
+   vocals stem (melody notes, pitch-class profile, phrase endings, key candidates)
+   and on the bass stem (bass notes → slash chords). Vocals are the primary key
+   evidence; if the track is instrumental the melody step fails gracefully and
+   only bass is used.
 3. **Format**:
    ```
    <PY> -W ignore <skill-dir>/scripts/02_format.py out/<name>.raw.json --outdir out
    ```
    Produces `<name>.chords.json` + `<name>.lab`. Automatically merges
-   `<name>.struct.json` if present: chords get `bar`/`beat` (from downbeats) and
-   `section` labels; `structure` and `tempo_bpm` land in the JSON. `--bars` is the
-   legacy manual-beats path; `--struct` overrides the auto-discovered file.
+   `<name>.struct.json` and `<name>.voices.json` if present: chords get
+   `bar`/`beat`/`section`/`bass_pc`, key inference fuses chord histogram +
+   melody pitch-class profile + phrase-ending anchors, section-local keys are
+   estimated, chord labels are respelled for the local key (B♭ not A♯) and
+   inversions become slash chords (C:maj/E). `--bars`/`--struct`/`--voices`
+   override auto-discovery.
 4. **Summarize** (for the user's overview and your own quick reading):
    ```
    <PY> -W ignore <skill-dir>/scripts/03_summarize.py out/<name>.chords.json
    ```
+4b. **Harmonic map** (bar grid + Roman numerals + repeated progressions):
+   ```
+   <PY> -W ignore <skill-dir>/scripts/04_map.py out/<name>.chords.json --outdir out
+   ```
+   Writes `<name>.map.md`: per-bar chord grid with Roman numerals under the
+   section's local key, per-section progression chains and harmonic rhythm, and
+   repeated n-gram progressions ranked by frequency. This is the file to read
+   for "和声地图"/"扒谱" style questions — don't re-derive it by hand.
 5. **Analyze / answer**: read `out/<name>.chords.json` (for long songs read `stats`
    first, then read `chords` in slices as needed), then answer or write a report to
    `out/<name>.analysis.md` following the "LLM analysis conventions" in
@@ -97,13 +119,23 @@ If setup fails, report the error to the user; do not silently switch engines.
 
 - Answers must be grounded in the actual JSON data; cite chords with timestamps
   (e.g. `1:23.5 (83.5s) G:maj`).
-- Key: `song.key` is a heuristic inference. Give your own judgment with evidence
-  (opening/closing chords, tonicization, characteristic pitches); if you disagree
-  with the heuristic, say so.
+- **Key**: `song.key` fuses three evidence sources (chord histogram, melody
+  pitch-class profile, phrase-ending anchors). Report `song.key_candidates` and
+  their `tonic_evidence` when the top two are close — that usually means a
+  relative major/minor or parallel-mode ambiguity. Never present a
+  near-related-key guess as certain.
+- **Sections**: use `structure.segments[].key/key_confidence` for section-local
+  keys; `song.modulations` lists every distinct key found. A low-confidence
+  segment key (short segments) should be described as uncertain.
+- **Progressions**: prefer `04_map.py` output (`<name>.map.md`) — it already has
+  the bar grid, Roman numerals and mined repeated n-grams. Do not re-derive the
+  map by hand from raw chords.
+- **Inversions**: labels with `/bass` are inversions confirmed by the bass stem;
+  the `bass_pc` field is the raw low note when not a chord tone.
 - Report structure: overview → key & modulations → section progression patterns
-  (annotated with Roman numerals) → cadences & highlights → summary.
-- For long songs do not read all chords at once; use the merged timeline from
-  03_summarize.py to grasp the whole, then zoom into sections the question targets.
+  (Roman numerals) → harmonic rhythm → cadences & highlights → low-confidence list.
+- For long songs do not read all chords at once; start from `03_summarize.py`
+  and `<name>.map.md`, then zoom into sections the question targets.
 
 ## Troubleshooting
 

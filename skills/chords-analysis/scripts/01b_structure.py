@@ -37,9 +37,12 @@ def find_audio(path: Path):
 def run_allin1(audio: Path):
     import allin1_infer as allin1
     r = allin1.analyze(str(audio), keep_byproducts=False)
+    beat_positions = list(getattr(r, "beat_positions", None) or [])
+    meter = max(beat_positions) if beat_positions else None
     return {
         "schema": "struct-v1",
         "bpm": float(r.bpm) if r.bpm else None,
+        "meter": meter,
         "beats": [round(float(b), 3) for b in (r.beats or [])],
         "downbeats": [round(float(b), 3) for b in (r.downbeats or [])],
         "segments": [{"start": round(float(s.start), 3), "end": round(float(s.end), 3),

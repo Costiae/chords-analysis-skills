@@ -58,7 +58,11 @@ def fmt_sec(s):
     return f"{int(s // 60)}:{s % 60:04.1f}"
 
 
-def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: Optional[Path]):
+def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: Optional[Path],
+            voices_file: Optional[Path] = None):
+    sys.path.insert(0, str(Path(__file__).parent))
+    import harmony as H
+
     doc = json.loads(path.read_text(encoding="utf-8-sig"))
     chords = merge_short(doc["chords"])
 
@@ -79,6 +83,13 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
         segments = struct.get("segments") or []
     elif beats_file and beats_file.exists():
         beats = json.loads(beats_file.read_text(encoding="utf-8"))["beats"]
+
+    # 旋律/低音层(01c_voices.py)
+    voices = None
+    if voices_file and voices_file.exists():
+        voices = json.loads(voices_file.read_text(encoding="utf-8-sig"))
+    melody_notes = ((voices or {}).get("melody") or {}).get("notes") or []
+    bass_notes = ((voices or {}).get("bass") or {}).get("notes") or []
 
     def section_at(t):
         if not segments:
@@ -103,9 +114,11 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
             if i >= 0:
                 bar, beat = divmod(i, 4)
                 bar, beat = bar + 1, beat + 1
+        bass_pc, _ = H.dominant_bass_pc(bass_notes, c["start"], c["end"]) if bass_notes else (None, 0)
         out_chords.append({"start": c["start"], "end": c["end"], "label": c["label"],
                            "bar": bar, "beat": beat,
-                           "section": section_at(c["start"])})
+                           "section": section_at(c["start"]),
+                           "bass_pc": bass_pc})
 
     # 集成验证(ensemble)结果透传 + 冲突时长统计
     ens = doc.get("ensemble")
@@ -126,9 +139,117 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
                      "conflict_seconds": round(conf_secs, 1)}
 
     song = dict(doc["song"])
-    key = infer_key(hist)
+    # ---- 调性:和弦 + 旋律双证据 + 乐句终止音,sharp/flat 两套拼写取更优 ----
+    melody_prof = None
+    if melody_notes:
+        melody_prof = {pc: 0.0 for pc in H.PC_SHARP}
+        for n in melody_notes:
+            melody_prof[H.pc_name(n["midi"] % 12)] += n["end"] - n["start"]
+    phrase_ends = ((voices or {}).get("melody") or {}).get("phrase_endings") or []
+    end_weight = defaultdict(float)
+    for e in phrase_ends:
+        end_weight[e["midi"] % 12] += 1.0
+
+    def combined_profile(use_flats):
+        prof = H.chord_profile(hist, use_flats=use_flats)
+        if melody_prof:
+            mel = {H.pc_name(H.pc_index(k), use_flats): v for k, v in melody_prof.items()}
+            cs, ms = sum(prof.values()) or 1, sum(mel.values()) or 1
+            for k in prof:
+                prof[k] += mel.get(k, 0.0) * (cs / ms) * 1.2   # 旋律略加权
+        return prof
+
+    def rank_keys(use_flats, top=4):
+        """相对大/小调同音集无法区分时,用乐句终止音的属主音权重打破平局。"""
+        cands = H.key_candidates(combined_profile(use_flats), top=8, use_flats=use_flats)
+        total_ends = sum(end_weight.values()) or 1
+        for c in cands:
+            tonic_share = end_weight.get(H.pc_index(c["root"]), 0.0) / total_ends
+            # 相对关系调(大/小)同主音,终止音证据能直接分开
+            c["tonic_evidence"] = round(tonic_share, 3)
+            c["score"] = round(c["score"] + 0.6 * tonic_share, 3)
+        cands.sort(key=lambda x: -x["score"])
+        return cands[:top]
+
+    cands_sharp = rank_keys(False)
+    cands_flat = rank_keys(True)
+    best = max(cands_sharp[:1] + cands_flat[:1], key=lambda x: x["score"]) if (cands_sharp or cands_flat) else None
+    key = H.canonical_key_name(best["key"]) if best else None
+    use_flats = H.is_flat_key(key) if key else False
+    key_cands = rank_keys(use_flats)
+
+    # ---- 分段局部调性(先算,便于按段落拼写和弦) ----
+    if segments:
+        for seg in segments:
+            seg_chords = [c for c in out_chords if seg["start"] <= c["start"] < seg["end"]]
+            if not seg_chords:
+                continue
+            seg_hist = defaultdict(float)
+            for c in seg_chords:
+                seg_hist[c["label"]] += c["end"] - c["start"]
+            seg_use_flats = H.is_flat_key(key) if key else use_flats
+            seg_prof = H.chord_profile(seg_hist, use_flats=seg_use_flats)
+            mel_notes = [n for n in melody_notes if seg["start"] <= n["start"] < seg["end"]]
+            if mel_notes:
+                mel = {}
+                for n in mel_notes:
+                    pc = H.pc_name(n["midi"] % 12, seg_use_flats)
+                    mel[pc] = mel.get(pc, 0.0) + (n["end"] - n["start"])
+                cs, ms = sum(seg_prof.values()) or 1, sum(mel.values()) or 1
+                for k in seg_prof:
+                    seg_prof[k] += mel.get(k, 0.0) * (cs / ms) * 1.2
+            seg_ends = [n for n in phrase_ends
+                        if seg["start"] <= n["time"] < seg["end"]]
+            seg_keys = H.key_candidates(seg_prof, top=6, use_flats=seg_use_flats)
+            tot = len(seg_ends) or 1
+            for c in seg_keys:
+                ev = sum(1 for e in seg_ends if e["midi"] % 12 == H.pc_index(c["root"])) / tot
+                c["tonic_evidence"] = round(ev, 3)
+                c["score"] = round(c["score"] + 0.6 * ev, 3)
+            seg_keys.sort(key=lambda x: -x["score"])
+            if seg_keys:
+                seg["key"] = H.canonical_key_name(seg_keys[0]["key"])
+                seg["key_confidence"] = seg_keys[0]["score"]
+                seg["key_candidates"] = [{"key": H.canonical_key_name(k["key"]),
+                                          "score": k["score"]}
+                                         for k in seg_keys[:2]]
+
+    # ---- 等音规范化(按段落调性)+ 转位(斜杠和弦) ----
+    def key_for_time(t):
+        for s in (segments or []):
+            if s["start"] <= t < s["end"] and s.get("key"):
+                return s["key"]
+        return key
+
+    for c in out_chords:
+        k = key_for_time(c["start"])
+        f = H.is_flat_key(k) if k else use_flats
+        pcs = {H.pc_index(p) for p in H.label_pitch_classes(c["label"], f)}
+        slash = c["bass_pc"] if (c["bass_pc"] is not None and c["bass_pc"] in pcs) else None
+        c["label"] = H.respell_label(c["label"], f, slash)
+        c["key_context"] = k
+
+    hist = {}
+    for c in out_chords:
+        hist[c["label"]] = round(hist.get(c["label"], 0.0) + (c["end"] - c["start"]), 1)
+    hist = dict(sorted(hist.items(), key=lambda x: -x[1]))
+
     if key:
         song["key"] = key
+        song["key_candidates"] = [{"key": H.canonical_key_name(k["key"]),
+                                   "score": k["score"],
+                                   "tonic_evidence": k.get("tonic_evidence")}
+                                  for k in key_cands[:3]]
+        song["key_evidence"] = {
+            "chords": len(out_chords),
+            "melody_notes": len(melody_notes),
+            "phrase_endings": len(phrase_ends),
+            "relative_keys": H.relative_key_candidates(key),
+        }
+        # 转调提示:分段调性与全曲不一致时列出
+        seg_keys = {s["key"] for s in (segments or []) if s.get("key")}
+        if len(seg_keys) > 1:
+            song["modulations"] = sorted(seg_keys)
 
     result = {
         "schema": "chords-v1",
@@ -146,20 +267,32 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
         result["structure"] = {
             "engine": struct.get("engine"),
             "bpm": struct.get("bpm"),
+            "meter": struct.get("meter"),
             "downbeats": len(downbeats),
             "segments": segments,
         }
         if struct.get("bpm"):
             result["song"]["tempo_bpm"] = struct["bpm"]
+        if struct.get("meter"):
+            result["song"]["meter"] = struct["meter"]
+    if voices:
+        result["voices"] = {
+            "melody_source": (voices.get("melody") or {}).get("source"),
+            "melody_notes": len(melody_notes),
+            "melody_pitch_class_profile": (voices.get("melody") or {}).get("pitch_class_profile"),
+            "melody_phrase_endings": ((voices.get("melody") or {}).get("phrase_endings") or [])[:40],
+            "bass_notes": len(bass_notes),
+            "bass_inversions": sum(1 for c in out_chords if "/" in c["label"]),
+        }
     outdir.mkdir(parents=True, exist_ok=True)
     stem = path.stem.removesuffix(".raw")
     dest = outdir / f"{stem}.chords.json"
     dest.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # MIREX .lab
+    # MIREX .lab(等音规范化后的标签)
     lab = outdir / f"{stem}.lab"
-    lab.write_text("\n".join(f"{c['start']:.3f}\t{c['end']:.3f}\t{c['label']}" for c in chords),
-                   encoding="utf-8")
+    lab.write_text("\n".join(f"{c['start']:.3f}\t{c['end']:.3f}\t{c['label']}"
+                             for c in out_chords), encoding="utf-8")
 
     # 控制台摘要
     top = ", ".join(f"{k}({fmt_sec(v)})" for k, v in list(hist.items())[:8])
@@ -171,6 +304,9 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
     if segments:
         seg_line = " ".join(f"{s['label']}[{fmt_sec(s['start'])}]" for s in segments)
         print(f"  structure: {seg_line}")
+    if voices:
+        print(f"  voices: melody={len(melody_notes)} notes, bass={len(bass_notes)} notes, "
+              f"inversions={sum(1 for c in out_chords if '/' in c['label'])}")
     print(f"  -> {dest}")
 
 
@@ -181,14 +317,19 @@ def main():
     ap.add_argument("--bars", default=None, help="beats json, {'beats':[...]}")
     ap.add_argument("--struct", default=None,
                     help="01b_structure.py 输出 (.struct.json);缺省时自动在 outdir 找同名文件")
+    ap.add_argument("--voices", default=None,
+                    help="01c_voices.py 输出 (.voices.json);缺省时自动在 outdir 找同名文件")
     args = ap.parse_args()
     src = Path(args.input)
     files = [src] if src.is_file() else sorted(src.glob("*.raw.json"))
     beats = Path(args.bars) if args.bars else None
     for f in files:
-        sf = Path(args.struct) if args.struct else \
-             Path(args.outdir) / f"{f.stem.removesuffix('.raw')}.struct.json"
-        process(f, Path(args.outdir), beats, sf if sf.exists() else None)
+        stem = f.stem.removesuffix(".raw")
+        sf = Path(args.struct) if args.struct else Path(args.outdir) / f"{stem}.struct.json"
+        vf = Path(args.voices) if args.voices else Path(args.outdir) / f"{stem}.voices.json"
+        process(f, Path(args.outdir), beats,
+                sf if sf.exists() else None,
+                vf if vf.exists() else None)
 
 
 if __name__ == "__main__":

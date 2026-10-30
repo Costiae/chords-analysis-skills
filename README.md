@@ -51,17 +51,40 @@ report generated from the JSON.
 
 ```
 audio/xxx.flac
-  │  scripts/01_extract.py    chord recognition (madmom DeepChroma → CNN+CRF, auto-fallback)
+  │  scripts/01_extract.py    chord recognition (madmom DeepChroma + CNN-CRF ensemble)
   ▼
-out/xxx.raw.json               raw engine output
-  │  scripts/02_format.py     normalize + merge fragments + duration-weighted stats
-  │                           + heuristic key inference (optional bar alignment via --bars)
+out/xxx.raw.json               raw engine output + agreement/conflict intervals
+out/xxx.struct.json            ← 01b_structure.py: segments, beats, BPM, meter
+out/xxx.voices.json            ← 01c_voices.py: melody notes/key evidence, bass notes
+  │  scripts/02_format.py     fuse into chords-v1: bar/beat/section per chord,
+  │                           three-source key inference, section-local keys,
+  │                           enharmonic spelling, slash chords
   ▼
-out/xxx.chords.json    ★ standard chords-v1 format (authoritative) + xxx.lab (MIREX)
-  │  scripts/03_summarize.py  merged timeline summary
+out/xxx.chords.json    ★ standard chords-v1 (authoritative) + xxx.lab (MIREX)
+  │  scripts/03_summarize.py  merged timeline + harmonic rhythm stats
+  │  scripts/04_map.py        harmonic map: bar grid + Roman numerals + n-grams
   ▼
-LLM analysis → conversational Q&A or out/xxx.analysis.md report
+out/xxx.map.md + out/xxx.analysis.md
 ```
+
+## What a complete analysis covers
+
+| Layer | Source | Output |
+|---|---|---|
+| Chords | madmom ensemble (2 engines, cross-validated) | onset/offset + confidence |
+| Bar grid | all-in-one downbeats + meter | `bar` / `beat` per chord |
+| Sections | all-in-one functional labels | intro/verse/chorus/bridge/outro |
+| Tempo | all-in-one | BPM + meter |
+| Melody | demucs vocals + pyin | notes, pitch-class profile, phrase endings |
+| Bass / inversions | demucs bass + pyin | slash chords (`C:maj/E`) |
+| Key / mode | chords + melody + phrase anchors | candidates with evidence scores |
+| Modulations | per-section key estimation | `song.modulations`, per-segment keys |
+| Progressions | n-gram mining | repeated progressions with Roman numerals |
+
+Honest gaps (not yet automated): large-vocabulary chord qualities (7ths/sus are
+inferred, not detected — the madmom engines are maj/min based), instrument
+identification beyond the four demucs stems, tempo curves for rubato passages,
+and full polyphonic transcription (melody is monophonic pyin on the vocal stem).
 
 ## The chords-v1 format
 
