@@ -31,6 +31,28 @@ def py() -> str:
     return sys.executable
 
 
+def preflight():
+    """环境预检:解释器可用性 + 关键依赖。损坏的环境要立刻暴露,而不是跑到一半崩。"""
+    print(f"python: {sys.version.split()[0]}  ({sys.executable})")
+    ok = True
+    if not Path(sys.executable).exists():
+        print("[FATAL] interpreter missing — conda env was removed/damaged. "
+              "Re-run scripts/setup_env.py", file=sys.stderr)
+        ok = False
+    checks = [("madmom", "chords"), ("librosa", "audio io"),
+              ("allin1_infer", "structure"), ("transformers", "BTC-170"),
+              ("basic_pitch", "transcription"), ("mir_eval", "evaluation")]
+    for mod, purpose in checks:
+        try:
+            __import__(mod)
+            print(f"  ok   {mod:14s} ({purpose})")
+        except Exception:
+            print(f"  MISS {mod:14s} ({purpose}) -> that layer will degrade")
+    if not ok:
+        sys.exit(2)
+    print()
+
+
 def run(label, args):
     print(f"\n=== {label} ===", flush=True)
     r = subprocess.run([py(), "-W", "ignore", *args], text=True)

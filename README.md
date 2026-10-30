@@ -33,19 +33,38 @@ features are required.
 
 ## Setup (once)
 
-```sh
-cd skills/chords-analysis
-python scripts/setup_env.py   # prints the python to use (PY below)
+### One-command deployment (recommended)
+
+```powershell
+# Windows
+powershell -ExecutionPolicy Bypass -File deploy.ps1
+
+# macOS / Linux
+bash deploy.sh
 ```
 
-The script auto-routes: Python ≤3.9 → local `.venv`; Python ≥3.10 → conda env
-with Python 3.9 (madmom 0.16.1 only supports ≤3.9, `numpy<1.24`, `setuptools<81`).
+This creates a self-contained `.venv39` (Python 3.9 via `uv`) and `.cache/` in the
+repo root, installs every pinned dependency, fetches model weights (mirror-aware,
+sha256-verified) and runs a smoke test. No conda, no admin rights, nothing large
+written to the system drive. Delete `.cache/` freely — weights come back on demand.
+
+### Manual setup
+
+```sh
+cd skills/chords-analysis
+python scripts/setup_env.py   # prints the interpreter to use (PY below)
+```
+
+The script auto-routes to Python 3.9: local `.venv` if already 3.9, otherwise `uv`,
+otherwise conda. madmom 0.16.1 constraints are handled automatically
+(`numpy<1.24`, `setuptools<81`, `cython` + `--no-build-isolation`).
+
 All later commands: `PY -W ignore scripts/01_extract.py ...` (the `-W ignore`
 suppresses madmom's pkg_resources deprecation warning).
 
-**Verified in the wild** (Windows, Python 3.14 host → conda py3.9, Oct 2026):
-a 4:31 FLAC ran through the full pipeline — 155 chords, ensemble agreement 76.1%,
-report generated from the JSON.
+**Verified in the wild** (Windows, Oct 2026): a 4:31 96 kHz FLAC ran the whole
+pipeline — 304 large-vocabulary chords, 12 functional segments, melody/bass
+stems, 6.7k transcribed notes, harmonic map with Roman numerals.
 
 ## Pipeline
 

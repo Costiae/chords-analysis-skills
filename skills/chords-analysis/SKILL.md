@@ -28,16 +28,17 @@ Run from this skill's base directory:
 python scripts/setup_env.py
 ```
 
-The script probes your Python and picks a route:
-- Python ≤ 3.9 → creates `.venv` in the skill directory
-- Python ≥ 3.10 → creates/reuses a conda env `chords39` (Python 3.9), because
-  madmom 0.16.1 cannot run on 3.10+ (`collections.MutableSequence`) nor with
-  numpy ≥ 1.24 (`np.float`)
+The script probes your host and picks the first route that works:
+- host Python is 3.9 → creates `.venv` in the skill directory
+- otherwise, `uv` available → `uv python install 3.9` + `uv venv --python 3.9`
+  (recommended; no admin rights, no conda required)
+- otherwise, `conda` available → conda env `chords39` (Python 3.9)
+- otherwise it stops and tells you what to install
 
-The script prints the python executable to use for all later steps — call it
-`PY` below. On a Python ≥3.10 machine it is typically
-`~/miniconda3/envs/chords39/python.exe` (Windows) or `.../bin/python` (Unix),
-NOT a `.venv` inside the skill dir.
+It prints the interpreter (`PY`) to use for every later step. madmom 0.16.1 walls
+hit in real testing: needs Python ≤3.9 (`collections.MutableSequence`),
+`numpy<1.24` (`np.float`), `setuptools<81` (`pkg_resources`), and a
+`--no-build-isolation` build with `cython` pre-installed.
 
 madmom 0.16.1 install recipe (handled automatically, recorded for debugging):
 `setuptools<81` (pkg_resources) + `cython` + `numpy<1.24` pre-installed, then
@@ -185,6 +186,11 @@ All remote weights go through `scripts/models.py` + `models/manifest.json`:
 
 ## Troubleshooting
 
+- **The environment disappeared / `python.exe` not found**: this happened in
+  testing when a conda install was being uninstalled under the running job.
+  Just re-run `python scripts/setup_env.py` — model weights stay cached in
+  `~/.cache/chords-analysis` and `~/.cache/torch`, so nothing large re-downloads.
+  `run_all.py` runs a preflight check and says exactly which layer will degrade.
 - madmom install/import failures are version-driven; the exact walls hit in
   real testing (Windows, Python 3.14 host):
   - Python ≥ 3.10: `ImportError: cannot import MutableSequence from collections`

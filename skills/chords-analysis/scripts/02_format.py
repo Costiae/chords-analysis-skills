@@ -59,7 +59,8 @@ def fmt_sec(s):
 
 
 def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: Optional[Path],
-            voices_file: Optional[Path] = None, quality_file: Optional[Path] = None):
+            voices_file: Optional[Path] = None, quality_file: Optional[Path] = None,
+            transcription_file: Optional[Path] = None):
     sys.path.insert(0, str(Path(__file__).parent))
     import harmony as H
 
@@ -306,6 +307,8 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
             "engine": struct.get("engine"),
             "bpm": struct.get("bpm"),
             "meter": struct.get("meter"),
+            "tempo_range": struct.get("tempo_range"),
+            "tempo_curve": struct.get("tempo_curve"),
             "downbeats": len(downbeats),
             "segments": segments,
         }
@@ -329,6 +332,14 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
             "vocabulary": quality_doc.get("vocabulary"),
             "upgraded": upgraded,
             "total": len(quality_doc.get("chords") or []),
+        }
+    if transcription_file and transcription_file.exists():
+        tr = json.loads(transcription_file.read_text(encoding="utf-8-sig"))
+        result["transcription"] = {
+            "engine": tr.get("engine"),
+            "notes_total": len(tr.get("notes") or []),
+            "stems": {k: v.get("notes") for k, v in (tr.get("stems") or {}).items()},
+            "midi": tr.get("midi"),
         }
     outdir.mkdir(parents=True, exist_ok=True)
     stem = path.stem.removesuffix(".raw")
@@ -367,6 +378,8 @@ def main():
                     help="01c_voices.py 输出 (.voices.json);缺省时自动在 outdir 找同名文件")
     ap.add_argument("--quality", default=None,
                     help="01d_quality.py 输出 (.quality.json);缺省时自动在 outdir 找同名文件")
+    ap.add_argument("--transcription", default=None,
+                    help="01e_transcribe.py 输出 (.transcription.json);缺省时自动发现")
     args = ap.parse_args()
     src = Path(args.input)
     files = [src] if src.is_file() else sorted(src.glob("*.raw.json"))
@@ -376,10 +389,13 @@ def main():
         sf = Path(args.struct) if args.struct else Path(args.outdir) / f"{stem}.struct.json"
         vf = Path(args.voices) if args.voices else Path(args.outdir) / f"{stem}.voices.json"
         qf = Path(args.quality) if args.quality else Path(args.outdir) / f"{stem}.quality.json"
+        tf = Path(args.transcription) if args.transcription else \
+             Path(args.outdir) / f"{stem}.transcription.json"
         process(f, Path(args.outdir), beats,
                 sf if sf.exists() else None,
                 vf if vf.exists() else None,
-                qf if qf.exists() else None)
+                qf if qf.exists() else None,
+                tf if tf.exists() else None)
 
 
 if __name__ == "__main__":

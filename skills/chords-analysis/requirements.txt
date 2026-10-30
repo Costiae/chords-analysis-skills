@@ -1,0 +1,29 @@
+# chords-analysis skill runtime (Python 3.9)
+#
+# madmom is installed separately by deploy scripts because it must be built with
+# --no-build-isolation after cython + numpy<1.24 are present:
+#     pip install "setuptools<81" wheel cython "numpy<1.24"
+#     pip install --no-build-isolation madmom==0.16.1
+#
+# numpy must stay <1.24 (madmom uses np.float); setuptools <81 (pkg_resources).
+
+numpy<1.24
+setuptools<81
+
+# audio / analysis
+librosa==0.11.0
+soundfile>=0.12
+
+# large-vocabulary chord engine (BTC-170, HF packaging of ISMIR19)
+transformers==4.44.2
+huggingface_hub==0.25.2
+
+# evaluation
+mir_eval==0.8.2
+
+# transcription (扒谱)
+basic-pitch==0.4.0
+
+# structure / beats / segments (pure-pytorch allin1 fork, pinned commit)
+torch==2.8.0
+all-in-one-infer @ git+https://github.com/openmirlab/all-in-one-infer.git@566f96c3f007c783ab5eb6db0123bf3335af8f31
