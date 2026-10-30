@@ -70,7 +70,8 @@ def pick(names):
 
 
 def default_ensemble():
-    """默认 ensemble 组合:两个模型最独立的高 tier 引擎。"""
+    """默认 ensemble 组合:两个模型最独立的高 tier 引擎。返回 [(name, detect), ...]。"""
     primary = ENGINES[0]
     others = [e for e in ENGINES[1:] if e.tier <= 2]
-    return [primary] + (others[:1] if others else [])
+    sel = [primary] + (others[:1] if others else [])
+    return [(e.name, e.detect) for e in sel]

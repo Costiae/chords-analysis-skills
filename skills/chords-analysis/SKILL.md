@@ -28,16 +28,23 @@ Run from this skill's base directory:
 python scripts/setup_env.py
 ```
 
-This creates an isolated `.venv` inside the skill directory and installs madmom + librosa.
+The script probes your Python and picks a route:
+- Python 3.8–3.12 → creates `.venv` in the skill directory (madmom build needs
+  Cython + numpy<2 pre-installed with `--no-build-isolation`, handled automatically)
+- Python 3.13+ → madmom/numpy<2 have no wheels; the script creates a conda env
+  (Python 3.9) instead
+
+madmom 0.16.1 facts discovered the hard way (Windows, 2026): needs `setuptools<81`
+(pkg_resources removal), `numpy<1.24` (`np.float` alias), and Python ≤3.9
+(`collections.MutableSequence`).
+
 Verify afterwards:
 
 ```
-<skill-dir>/.venv/Scripts/python -c "import madmom"      # Windows
-<skill-dir>/.venv/bin/python -c "import madmom"          # macOS/Linux
+<returned python> -c "import madmom"
 ```
 
-If madmom fails to install or import, report the error to the user; do not silently
-switch engines. Fallbacks are listed at the bottom of this file.
+If setup fails, report the error to the user; do not silently switch engines.
 
 ## Workflow steps
 
