@@ -70,6 +70,12 @@ def setup_conda(name):
     pip_install(py, "setuptools<81", "cython", "numpy<1.24")
     pip_install(py, "--no-build-isolation", "madmom")
     pip_install(py, "librosa")
+    # structure analysis (segments/beats/bpm), optional: pure-pytorch fork of
+    # allin1, no NATTEN build needed on Windows
+    r = pip_install(py, "all-in-one-infer @ git+https://github.com/openmirlab/all-in-one-infer.git")
+    if r.returncode != 0:
+        print("[WARN] all-in-one-infer install failed; structure analysis (01b) "
+              "will fall back to madmom beat tracking (no segment labels)")
     return py
 
 

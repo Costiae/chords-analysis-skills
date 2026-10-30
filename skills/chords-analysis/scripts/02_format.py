@@ -57,7 +57,7 @@ def fmt_sec(s):
     return f"{int(s // 60)}:{s % 60:04.1f}"
 
 
-def process(path: Path, outdir: Path, beats_file: Path | None):
+def process(path: Path, outdir: Path, beats_file: Path | None, struct_file: Path | None):
     doc = json.loads(path.read_text(encoding="utf-8-sig"))
     chords = merge_short(doc["chords"])
 
@@ -67,21 +67,44 @@ def process(path: Path, outdir: Path, beats_file: Path | None):
         hist[c["label"]] += c["end"] - c["start"]
     hist = {k: round(v, 1) for k, v in sorted(hist.items(), key=lambda x: -x[1])}
 
-    # 可选节拍对齐
-    beats = None
-    if beats_file and beats_file.exists():
+    # 结构层(优先 01b_structure.py 产物;否则 --bars 显式文件)
+    struct = None
+    if struct_file and struct_file.exists():
+        struct = json.loads(struct_file.read_text(encoding="utf-8-sig"))
+    beats, downbeats, segments = None, None, None
+    if struct:
+        beats = struct.get("beats")
+        downbeats = struct.get("downbeats") or []
+        segments = struct.get("segments") or []
+    elif beats_file and beats_file.exists():
         beats = json.loads(beats_file.read_text(encoding="utf-8"))["beats"]
+
+    def section_at(t):
+        if not segments:
+            return None
+        for s in segments:
+            if s["start"] <= t < s["end"]:
+                return s["label"]
+        return None
 
     out_chords = []
     for c in chords:
         bar = beat = None
-        if beats:
+        if downbeats:
+            # 下拍已知:小节号 = 下拍索引,拍内位置按 beats 推
+            i = bisect.bisect_right(downbeats, c["start"] + 1e-6) - 1
+            if i >= 0:
+                j = bisect.bisect_right(beats or downbeats, c["start"] + 1e-6) - 1
+                beat = max(1, j - i + 1)
+                bar = i + 1
+        elif beats:
             i = bisect.bisect_right(beats, c["start"]) - 1
             if i >= 0:
                 bar, beat = divmod(i, 4)
                 bar, beat = bar + 1, beat + 1
         out_chords.append({"start": c["start"], "end": c["end"], "label": c["label"],
-                           "bar": bar, "beat": beat})
+                           "bar": bar, "beat": beat,
+                           "section": section_at(c["start"])})
 
     # 集成验证(ensemble)结果透传 + 冲突时长统计
     ens = doc.get("ensemble")
@@ -118,6 +141,15 @@ def process(path: Path, outdir: Path, beats_file: Path | None):
     }
     if conflicts:
         result["ensemble"] = conflicts
+    if struct:
+        result["structure"] = {
+            "engine": struct.get("engine"),
+            "bpm": struct.get("bpm"),
+            "downbeats": len(downbeats),
+            "segments": segments,
+        }
+        if struct.get("bpm"):
+            result["song"]["tempo_bpm"] = struct["bpm"]
     outdir.mkdir(parents=True, exist_ok=True)
     stem = path.stem.removesuffix(".raw")
     dest = outdir / f"{stem}.chords.json"
@@ -135,6 +167,9 @@ def process(path: Path, outdir: Path, beats_file: Path | None):
     if conflicts:
         print(f"  ensemble: agreement={conflicts['agreement']:.1%}, "
               f"conflict={conflicts['conflict_seconds']}s — 见 chords[].confidence")
+    if segments:
+        seg_line = " ".join(f"{s['label']}[{fmt_sec(s['start'])}]" for s in segments)
+        print(f"  structure: {seg_line}")
     print(f"  -> {dest}")
 
 
@@ -143,12 +178,16 @@ def main():
     ap.add_argument("input")
     ap.add_argument("--outdir", default="out")
     ap.add_argument("--bars", default=None, help="beats json, {'beats':[...]}")
+    ap.add_argument("--struct", default=None,
+                    help="01b_structure.py 输出 (.struct.json);缺省时自动在 outdir 找同名文件")
     args = ap.parse_args()
     src = Path(args.input)
     files = [src] if src.is_file() else sorted(src.glob("*.raw.json"))
     beats = Path(args.bars) if args.bars else None
     for f in files:
-        process(f, Path(args.outdir), beats)
+        sf = Path(args.struct) if args.struct else \
+             Path(args.outdir) / f"{f.stem.removesuffix('.raw')}.struct.json"
+        process(f, Path(args.outdir), beats, sf if sf.exists() else None)
 
 
 if __name__ == "__main__":

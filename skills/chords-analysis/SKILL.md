@@ -68,12 +68,22 @@ If setup fails, report the error to the user; do not silently switch engines.
    downstream. `--list-engines` shows available engines; `--engine a,b,c` runs any
    combination; if the primary engine fails, the next one is used automatically.
    Relay any failure output to the user in full.
+2b. **Structure analysis** (segments / beats / BPM — do NOT guess sections from
+   chords; run the dedicated model):
+   ```
+   <PY> -W ignore <skill-dir>/scripts/01b_structure.py audio/<file> --outdir out
+   ```
+   Uses all-in-one-infer (functional segments: intro/verse/chorus/bridge/outro +
+   beats + BPM). If unavailable, falls back to madmom beat tracking (no segment
+   labels — then say so instead of guessing). First run downloads model weights.
 3. **Format**:
    ```
    <PY> -W ignore <skill-dir>/scripts/02_format.py out/<name>.raw.json --outdir out
    ```
-   Produces `<name>.chords.json` + `<name>.lab`. If the user has beat data (a JSON with
-   `{"beats": [t1, t2, ...]}`), pass it via `--bars` to align chords to bars/beats.
+   Produces `<name>.chords.json` + `<name>.lab`. Automatically merges
+   `<name>.struct.json` if present: chords get `bar`/`beat` (from downbeats) and
+   `section` labels; `structure` and `tempo_bpm` land in the JSON. `--bars` is the
+   legacy manual-beats path; `--struct` overrides the auto-discovered file.
 4. **Summarize** (for the user's overview and your own quick reading):
    ```
    <PY> -W ignore <skill-dir>/scripts/03_summarize.py out/<name>.chords.json
