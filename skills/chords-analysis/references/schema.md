@@ -50,9 +50,15 @@
 - `chords[].key_context`:可选。该和弦所处的段落局部调性(拼写依据)。
 - `bar` / `beat`:小节号与拍位(来自 01b 的下拍对齐);无结构数据时为 null。
 - `structure`(可选):`{engine, bpm, meter, downbeats, segments}`。
-  `segments[].key` / `key_confidence` / `key_candidates` 为段落局部调性。
+  `segments[].key` / `key_confidence` / `key_source` / `key_candidates` 为段落局部调性。
+  `key_source` 取值:`estimated`(本段独立判定)、`stable`(与相邻段同调,
+  防止关系调摇摆)、`inherited`(段太短/证据不足,沿用上一可信段)。
   **乐段划分以此为准,engine 非 allin1 时无段落标签。**
-- `song.key_candidates`:调性候选(含 `tonic_evidence` 乐句终止音证据权重)。
+- `song.key_candidates` / `segments[].key_candidates`:调性候选。`score` 为
+  `0.55×Krumhansl 相关 + 0.45×调内覆盖率 + 终止音证据`,同时给出
+  `diatonic`(和弦音落在该调内的时长加权比例)与 `tonic_evidence`
+  (旋律乐句终止音落在主音的比例)。
+  `song.key_ambiguous: true` 表示前两名分差过小,应当视为不确定并引用候选。
   `song.modulations`:全曲出现的所有调性。
 - `voices`(可选):`{melody_source, melody_notes, melody_pitch_class_profile,
   melody_phrase_endings, bass_notes, bass_inversions}`。
