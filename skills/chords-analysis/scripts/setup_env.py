@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """Cross-platform environment setup for the chords-analysis skill.
 
-Strategy (madmom 0.16.1 has no wheels and needs numpy<2, so Python must be <=3.12):
-  1. If current Python is <= 3.12: create .venv in the skill dir, install deps.
-  2. If current Python is >= 3.13: try to create a conda env 'chords' with
-     Python 3.10 instead (numpy<2 has no wheels for 3.13+).
+Strategy (madmom 0.16.1 has no wheels and only supports Python <= 3.9):
+  1. If current Python is <= 3.9: create .venv in the skill dir, install deps.
+  2. If current Python is >= 3.10: create/reuse a conda env (Python 3.9) instead —
+     'collections.MutableSequence' was removed in 3.10, and numpy<1.24 has no
+     wheels for 3.13+.
   3. Print the python executable to use for the scripts.
 
-Usage:  python setup_env.py [--conda-env NAME]
+Verified recipe (Windows, Oct 2026): Python 3.9 + setuptools<81 + cython +
+numpy 1.23.5 + madmom 0.16.1 (--no-build-isolation) + librosa 0.11.
+
+Usage:  python setup_env.py
 """
 import subprocess
 import sys
@@ -70,17 +74,19 @@ def setup_conda(name):
 
 
 def main():
-    if sys.version_info >= (3, 13):
-        print("Python >= 3.13 detected; madmom needs numpy<2 (no wheels for 3.13+).")
-        print("Falling back to a conda env with Python 3.9 ...")
+    if sys.version_info >= (3, 10):
+        print("Python >= 3.10 detected; madmom 0.16.1 needs Python <= 3.9")
+        print("(collections.MutableSequence removed in 3.10; numpy<1.24 has no")
+        print(" wheels for 3.13+). Falling back to a conda env with Python 3.9 ...")
         py = setup_conda("chords39")
     else:
         py = setup_venv()
-    r = run(py, "-c", "import madmom, librosa; print('OK: madmom', madmom.__version__)")
+    r = run(py, "-W", "ignore", "-c",
+            "import madmom, librosa; print('OK: madmom', madmom.__version__)")
     if r.returncode != 0:
         print("[WARN] install finished but import failed — see troubleshooting in SKILL.md")
         sys.exit(2)
-    print("\nDone. Use this python for the scripts:")
+    print("\nDone. Use this python (with -W ignore) for the scripts:")
     print(py)
 
 

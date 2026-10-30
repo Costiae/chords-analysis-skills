@@ -35,8 +35,17 @@ features are required.
 
 ```sh
 cd skills/chords-analysis
-python scripts/setup_env.py        # creates .venv, installs madmom + librosa
+python scripts/setup_env.py   # prints the python to use (PY below)
 ```
+
+The script auto-routes: Python ≤3.9 → local `.venv`; Python ≥3.10 → conda env
+with Python 3.9 (madmom 0.16.1 only supports ≤3.9, `numpy<1.24`, `setuptools<81`).
+All later commands: `PY -W ignore scripts/01_extract.py ...` (the `-W ignore`
+suppresses madmom's pkg_resources deprecation warning).
+
+**Verified in the wild** (Windows, Python 3.14 host → conda py3.9, Oct 2026):
+a 4:31 FLAC ran through the full pipeline — 155 chords, ensemble agreement 76.1%,
+report generated from the JSON.
 
 ## Pipeline
 

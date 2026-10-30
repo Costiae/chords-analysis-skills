@@ -29,19 +29,28 @@ python scripts/setup_env.py
 ```
 
 The script probes your Python and picks a route:
-- Python 3.8–3.12 → creates `.venv` in the skill directory (madmom build needs
-  Cython + numpy<2 pre-installed with `--no-build-isolation`, handled automatically)
-- Python 3.13+ → madmom/numpy<2 have no wheels; the script creates a conda env
-  (Python 3.9) instead
+- Python ≤ 3.9 → creates `.venv` in the skill directory
+- Python ≥ 3.10 → creates/reuses a conda env `chords39` (Python 3.9), because
+  madmom 0.16.1 cannot run on 3.10+ (`collections.MutableSequence`) nor with
+  numpy ≥ 1.24 (`np.float`)
 
-madmom 0.16.1 facts discovered the hard way (Windows, 2026): needs `setuptools<81`
-(pkg_resources removal), `numpy<1.24` (`np.float` alias), and Python ≤3.9
-(`collections.MutableSequence`).
+The script prints the python executable to use for all later steps — call it
+`PY` below. On a Python ≥3.10 machine it is typically
+`~/miniconda3/envs/chords39/python.exe` (Windows) or `.../bin/python` (Unix),
+NOT a `.venv` inside the skill dir.
+
+madmom 0.16.1 install recipe (handled automatically, recorded for debugging):
+`setuptools<81` (pkg_resources) + `cython` + `numpy<1.24` pre-installed, then
+`pip install --no-build-isolation madmom`, then `librosa`.
+Verified combo (Windows, Oct 2026): Python 3.9 / numpy 1.23.5 / madmom 0.16.1 / librosa 0.11.
+
+**Always invoke the analysis python with `-W ignore`** — madmom emits a
+pkg_resources deprecation warning on import that pollutes stderr.
 
 Verify afterwards:
 
 ```
-<returned python> -c "import madmom"
+<PY> -W ignore -c "import madmom, librosa; print('OK')"
 ```
 
 If setup fails, report the error to the user; do not silently switch engines.
@@ -52,20 +61,22 @@ If setup fails, report the error to the user; do not silently switch engines.
    mp3/wav/flac/m4a/ogg/aiff).
 2. **Extract chords** (accuracy-first: ensemble cross-validation by default):
    ```
-   <skill-dir>/.venv/Scripts/python <skill-dir>/scripts/01_extract.py audio/<file> --outdir out
+   <PY> -W ignore <skill-dir>/scripts/01_extract.py audio/<file> --outdir out
    ```
-   (On macOS/Linux use `.venv/bin/python`.) Two independent madmom engines
-   (DeepChroma and CNN+CRF) run by default; their agreement is computed and
-   disagreeing intervals are marked. Relay any failure output to the user in full.
+   Two independent madmom engines (DeepChroma and CNN+CRF) run by default; their
+   agreement is printed and disagreeing intervals are marked `confidence: "conflict"`
+   downstream. `--list-engines` shows available engines; `--engine a,b,c` runs any
+   combination; if the primary engine fails, the next one is used automatically.
+   Relay any failure output to the user in full.
 3. **Format**:
    ```
-   <skill-dir>/.venv/Scripts/python <skill-dir>/scripts/02_format.py out/<name>.raw.json --outdir out
+   <PY> -W ignore <skill-dir>/scripts/02_format.py out/<name>.raw.json --outdir out
    ```
    Produces `<name>.chords.json` + `<name>.lab`. If the user has beat data (a JSON with
    `{"beats": [t1, t2, ...]}`), pass it via `--bars` to align chords to bars/beats.
 4. **Summarize** (for the user's overview and your own quick reading):
    ```
-   <skill-dir>/.venv/Scripts/python <skill-dir>/scripts/03_summarize.py out/<name>.chords.json
+   <PY> -W ignore <skill-dir>/scripts/03_summarize.py out/<name>.chords.json
    ```
 5. **Analyze / answer**: read `out/<name>.chords.json` (for long songs read `stats`
    first, then read `chords` in slices as needed), then answer or write a report to
@@ -86,9 +97,15 @@ If setup fails, report the error to the user; do not silently switch engines.
 
 ## Troubleshooting
 
-- madmom may fail on Python ≥ 3.12 due to numpy/compile issues: try
-  `pip install "numpy<2"` first, then madmom; if it still fails, honestly tell the
-  user and suggest a conda env with Python 3.10 (`conda create -n chords python=3.10`).
+- madmom install/import failures are version-driven; the exact walls hit in
+  real testing (Windows, Python 3.14 host):
+  - Python ≥ 3.10: `ImportError: cannot import MutableSequence from collections`
+    → must use Python 3.9 (`conda create -n chords39 python=3.9 -y`)
+  - numpy ≥ 1.24: `np.float` removed → pin `numpy<1.24` (1.23.5 verified)
+  - setuptools ≥ 81: `pkg_resources` removed → pin `setuptools<81`
+  - default pip build isolation hides Cython → install madmom with
+    `--no-build-isolation`, after `cython` and `numpy<1.24` are present
+  - Python 3.13+: numpy<1.24 has no wheels at all — conda route is mandatory
 - Audio decode failure: check ffmpeg is on PATH (librosa needs it for mp3/m4a;
   flac/wav decode natively).
 - Obviously wrong results (all `N` or a single chord): warn the user that this engine
