@@ -75,12 +75,22 @@ Snapshot:
 Labels follow the MIREX chord format (`root:quality` — maj, min, maj7, min7, 7,
 dim, aug, sus2, sus4, hdim7, `N` for no-chord).
 
-## Accuracy notes
+## Pluggable engines
 
-The core engine is madmom (DeepChroma CNN + CRF decoding; ISMIR 2016/2018 line of
-work). It performs well on pop/rock/folk music built from triads. Dense jazz
-sevenths, pure percussion, and heavy electronic production are common weak spots —
-the `.lab` output is hand-editable; re-run `02_format.py` after manual fixes.
+Chord recognition is **accuracy-first and engine-agnostic**. No engine is 100%
+accurate, so:
+
+- Two independent engines run by default (ensemble) and cross-validate each other;
+  disagreement intervals are flagged `confidence: "conflict"` in the JSON.
+- All engines are registered in `skills/chords-analysis/scripts/engines.py`.
+  Adding a future/better model (ChordFormer, BTC, a commercial API…) means writing
+  one `detect(audio) -> [{"start","end","label"}]` function and one registration
+  line — the rest of the pipeline never changes. `--engine a,b,c` ensembles any
+  combination; `--list-engines` shows what's available.
+
+Interpretation of `ensemble.agreement`: ≥0.85 trustworthy · 0.65–0.85 hedge your
+wording · <0.65 suggest manual review (common for jazz / dense electronic /
+percussion-only material).
 
 ## License
 

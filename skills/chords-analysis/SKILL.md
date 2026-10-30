@@ -16,6 +16,9 @@ The standard data format is documented in `references/schema.md`.
 - Authoritative data file: `out/<name>.chords.json` (chords-v1 schema)
 - Scripts (paths relative to this skill's base directory): `scripts/01_extract.py`
   (recognition), `scripts/02_format.py` (normalization), `scripts/03_summarize.py` (summary)
+- Engines are pluggable via `scripts/engines.py`; adding a better model in the future
+  is one function + one registration line. Run `01_extract.py --list-engines` to
+  see what's available.
 
 ## First-time environment setup
 
