@@ -78,8 +78,7 @@ If setup fails, report the error to the user; do not silently switch engines.
    tracking (no segment labels — then say so instead of guessing). Weights are
    fetched from HuggingFace; on blocked networks use `HF_ENDPOINT=https://hf-mirror.com`
    and pre-place the `harmonix-fold*.pth` files in `~/.cache/torch/hub/checkpoints`.
-2c. **Voices: melody + bass** (mode/key evidence and inversions):
-   ```
+2c. **Voices: melody + bass** (mode/key evidence and inversions):   ```
    <PY> -W ignore <skill-dir>/scripts/01c_voices.py audio/<file> --outdir out
    ```
    Runs demucs once (cached in `<outdir>/.stems/`), then pyin pitch tracking on the
@@ -87,17 +86,45 @@ If setup fails, report the error to the user; do not silently switch engines.
    and on the bass stem (bass notes → slash chords). Vocals are the primary key
    evidence; if the track is instrumental the melody step fails gracefully and
    only bass is used.
+2d. **Chord quality (large vocabulary, offline fallback)**:
+   ```
+   <PY> -W ignore <skill-dir>/scripts/01d_quality.py audio/<file> out/<name>.raw.json --outdir out
+   ```
+   Keeps madmom's root, refines the quality by chroma template matching over
+   13 qualities (maj/min/dim/aug/maj7/min7/7/hdim7/dim7/sus2/sus4/6/min6) with
+   family restriction, energy validation and per-quality margins. This is the
+   fallback when no neural large-vocabulary model is installed. A neural model
+   registered in `scripts/engines.py` (see `models/manifest.json` → optional slot
+   `chord-lv`) takes precedence when available.
+
+## Model fetching (shared, mirror-aware)
+
+All remote weights go through `scripts/models.py` + `models/manifest.json`:
+
+```
+<PY> -W ignore <skill-dir>/scripts/models.py --status          # what's cached
+<PY> -W ignore <skill-dir>/scripts/models.py --fetch-all       # download+verify
+<PY> -W ignore <skill-dir>/scripts/models.py --check-updates   # HEAD-compare, no download
+```
+
+- Mirror: `CHORDS_HF_MIRROR` or `HF_ENDPOINT` (defaults to `https://hf-mirror.com`);
+  set to `none` to force the official source.
+- Every artifact is sha256-verified and atomically replaced; downloads resume.
+- **Never let a download failure abort the pipeline** — each stage degrades:
+  structure → madmom beats; melody → bass only; large-vocab model → template
+  quality refinement; quality refinement → raw maj/min. Always report which
+  layer degraded and why.
 3. **Format**:
    ```
    <PY> -W ignore <skill-dir>/scripts/02_format.py out/<name>.raw.json --outdir out
    ```
    Produces `<name>.chords.json` + `<name>.lab`. Automatically merges
-   `<name>.struct.json` and `<name>.voices.json` if present: chords get
-   `bar`/`beat`/`section`/`bass_pc`, key inference fuses chord histogram +
-   melody pitch-class profile + phrase-ending anchors, section-local keys are
-   estimated, chord labels are respelled for the local key (B♭ not A♯) and
-   inversions become slash chords (C:maj/E). `--bars`/`--struct`/`--voices`
-   override auto-discovery.
+   `<name>.struct.json`, `<name>.voices.json` and `<name>.quality.json` if
+   present: chords get `bar`/`beat`/`section`/`bass_pc` and refined qualities,
+   key inference fuses chord histogram + melody pitch-class profile +
+   phrase-ending anchors, section-local keys are estimated, chord labels are
+   respelled for the local key (B♭ not A♯) and inversions become slash chords
+   (C:maj/E). `--bars`/`--struct`/`--voices`/`--quality` override auto-discovery.
 4. **Summarize** (for the user's overview and your own quick reading):
    ```
    <PY> -W ignore <skill-dir>/scripts/03_summarize.py out/<name>.chords.json

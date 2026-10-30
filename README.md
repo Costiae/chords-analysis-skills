@@ -77,14 +77,34 @@ out/xxx.map.md + out/xxx.analysis.md
 | Tempo | all-in-one | BPM + meter |
 | Melody | demucs vocals + pyin | notes, pitch-class profile, phrase endings |
 | Bass / inversions | demucs bass + pyin | slash chords (`C:maj/E`) |
+| Chord quality | `01d_quality.py` chroma templates (offline) | maj7/min7/7/sus/dim/aug, 13 qualities |
 | Key / mode | chords + melody + phrase anchors | candidates with evidence scores |
 | Modulations | per-section key estimation | `song.modulations`, per-segment keys |
 | Progressions | n-gram mining | repeated progressions with Roman numerals |
 
-Honest gaps (not yet automated): large-vocabulary chord qualities (7ths/sus are
-inferred, not detected — the madmom engines are maj/min based), instrument
-identification beyond the four demucs stems, tempo curves for rubato passages,
-and full polyphonic transcription (melody is monophonic pyin on the vocal stem).
+Honest gaps (not yet automated): instrument identification beyond the four
+demucs stems, tempo curves for rubato passages, and full polyphonic
+transcription (melody is monophonic pyin on the vocal stem). Chord qualities are
+template-inferred offline — a neural large-vocabulary model can be registered in
+`scripts/engines.py` (optional slot `chord-lv` in `models/manifest.json`) and
+will take precedence, with the template path as automatic fallback.
+
+## Model fetching
+
+All remote weights are declared in `skills/chords-analysis/models/manifest.json`
+and fetched by `scripts/models.py` (mirror-aware, sha256-verified, resumable,
+`--check-updates` HEAD comparison). Mirror defaults to `https://hf-mirror.com`;
+override with `CHORDS_HF_MIRROR`.
+
+```sh
+PY scripts/models.py --status        # cached artifacts
+PY scripts/models.py --fetch-all     # download + verify
+PY scripts/models.py --check-updates # detect remote updates without downloading
+```
+
+If a fetch fails nothing breaks: structure falls back to beat tracking, melody to
+bass-only, large-vocab to template quality refinement, and finally to raw
+maj/min chords — the pipeline always reports which layer degraded.
 
 ## The chords-v1 format
 

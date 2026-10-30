@@ -56,6 +56,9 @@
   `song.modulations`:全曲出现的所有调性。
 - `voices`(可选):`{melody_source, melody_notes, melody_pitch_class_profile,
   melody_phrase_endings, bass_notes, bass_inversions}`。
+- `quality`(可选):`{engine, vocabulary, upgraded, total}`。engine 为
+  `template-chroma` 表示离线模板推断;若接入神经大词汇模型则为对应引擎名。
+  `chords[].quality_source` / `quality_margin` 标记被升级的和弦及其证据强度。
 - `stats.chord_histogram`:按出现时长(秒)加权的和弦统计,四舍五入到 0.1s。
 
 ## 衍生文件

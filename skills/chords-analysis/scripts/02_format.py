@@ -59,7 +59,7 @@ def fmt_sec(s):
 
 
 def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: Optional[Path],
-            voices_file: Optional[Path] = None):
+            voices_file: Optional[Path] = None, quality_file: Optional[Path] = None):
     sys.path.insert(0, str(Path(__file__).parent))
     import harmony as H
 
@@ -91,6 +91,14 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
     melody_notes = ((voices or {}).get("melody") or {}).get("notes") or []
     bass_notes = ((voices or {}).get("bass") or {}).get("notes") or []
 
+    # 大词汇和弦质量(01d_quality.py;神经大词汇模型可用时优先于它)
+    quality_doc = None
+    if quality_file and quality_file.exists():
+        quality_doc = json.loads(quality_file.read_text(encoding="utf-8-sig"))
+    quality_by_start = {}
+    for q in ((quality_doc or {}).get("chords") or []):
+        quality_by_start[round(q["start"], 3)] = q
+
     def section_at(t):
         if not segments:
             return None
@@ -115,10 +123,24 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
                 bar, beat = divmod(i, 4)
                 bar, beat = bar + 1, beat + 1
         bass_pc, _ = H.dominant_bass_pc(bass_notes, c["start"], c["end"]) if bass_notes else (None, 0)
-        out_chords.append({"start": c["start"], "end": c["end"], "label": c["label"],
-                           "bar": bar, "beat": beat,
-                           "section": section_at(c["start"]),
-                           "bass_pc": bass_pc})
+        label = c["label"]
+        qsource = None
+        qmargin = None
+        q = quality_by_start.get(round(c["start"], 3))
+        if q and label != "N":
+            root, qual0 = H.parse_label(label)
+            if q["quality"] != qual0:
+                label = f"{root}:{q['quality']}"
+                qsource = "template-chroma"
+                qmargin = q["margin"]
+        entry = {"start": c["start"], "end": c["end"], "label": label,
+                 "bar": bar, "beat": beat,
+                 "section": section_at(c["start"]),
+                 "bass_pc": bass_pc}
+        if qsource:
+            entry["quality_source"] = qsource
+            entry["quality_margin"] = qmargin
+        out_chords.append(entry)
 
     # 集成验证(ensemble)结果透传 + 冲突时长统计
     ens = doc.get("ensemble")
@@ -284,6 +306,14 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
             "bass_notes": len(bass_notes),
             "bass_inversions": sum(1 for c in out_chords if "/" in c["label"]),
         }
+    if quality_doc:
+        upgraded = sum(1 for c in out_chords if c.get("quality_source") == "template-chroma")
+        result["quality"] = {
+            "engine": quality_doc.get("engine"),
+            "vocabulary": quality_doc.get("vocabulary"),
+            "upgraded": upgraded,
+            "total": len(quality_doc.get("chords") or []),
+        }
     outdir.mkdir(parents=True, exist_ok=True)
     stem = path.stem.removesuffix(".raw")
     dest = outdir / f"{stem}.chords.json"
@@ -319,6 +349,8 @@ def main():
                     help="01b_structure.py 输出 (.struct.json);缺省时自动在 outdir 找同名文件")
     ap.add_argument("--voices", default=None,
                     help="01c_voices.py 输出 (.voices.json);缺省时自动在 outdir 找同名文件")
+    ap.add_argument("--quality", default=None,
+                    help="01d_quality.py 输出 (.quality.json);缺省时自动在 outdir 找同名文件")
     args = ap.parse_args()
     src = Path(args.input)
     files = [src] if src.is_file() else sorted(src.glob("*.raw.json"))
@@ -327,9 +359,11 @@ def main():
         stem = f.stem.removesuffix(".raw")
         sf = Path(args.struct) if args.struct else Path(args.outdir) / f"{stem}.struct.json"
         vf = Path(args.voices) if args.voices else Path(args.outdir) / f"{stem}.voices.json"
+        qf = Path(args.quality) if args.quality else Path(args.outdir) / f"{stem}.quality.json"
         process(f, Path(args.outdir), beats,
                 sf if sf.exists() else None,
-                vf if vf.exists() else None)
+                vf if vf.exists() else None,
+                qf if qf.exists() else None)
 
 
 if __name__ == "__main__":
