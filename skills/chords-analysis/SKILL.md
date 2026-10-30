@@ -40,12 +40,13 @@ switch engines. Fallbacks are listed at the bottom of this file.
 
 1. **Locate input**: find the audio the user refers to (default scan `audio/` for
    mp3/wav/flac/m4a/ogg/aiff).
-2. **Extract chords**:
+2. **Extract chords** (accuracy-first: ensemble cross-validation by default):
    ```
    <skill-dir>/.venv/Scripts/python <skill-dir>/scripts/01_extract.py audio/<file> --outdir out
    ```
-   (On macOS/Linux use `.venv/bin/python`.) The engine auto-tries madmom DeepChroma →
-   CNN+CRF. Relay any failure output to the user in full.
+   (On macOS/Linux use `.venv/bin/python`.) Two independent madmom engines
+   (DeepChroma and CNN+CRF) run by default; their agreement is computed and
+   disagreeing intervals are marked. Relay any failure output to the user in full.
 3. **Format**:
    ```
    <skill-dir>/.venv/Scripts/python <skill-dir>/scripts/02_format.py out/<name>.raw.json --outdir out

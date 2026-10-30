@@ -83,6 +83,24 @@ def process(path: Path, outdir: Path, beats_file: Path | None):
         out_chords.append({"start": c["start"], "end": c["end"], "label": c["label"],
                            "bar": bar, "beat": beat})
 
+    # 集成验证(ensemble)结果透传 + 冲突时长统计
+    ens = doc.get("ensemble")
+    conflicts = None
+    if ens:
+        out_chords_by = {(c["start"], c["end"]): c for c in out_chords}
+        for it in ens["intervals"]:
+            if it["agree"]:
+                continue
+            # 找覆盖该时段的主引擎和弦,标记冲突
+            for c in out_chords:
+                if c["start"] <= it["start"] and c["end"] >= it["end"]:
+                    c.setdefault("confidence", "conflict")
+                    break
+        conf_secs = sum(c["end"] - c["start"] for c in out_chords
+                        if c.get("confidence") == "conflict")
+        conflicts = {"engines": ens["engines"], "agreement": ens["agreement"],
+                     "conflict_seconds": round(conf_secs, 1)}
+
     song = dict(doc["song"])
     key = infer_key(hist)
     if key:
@@ -98,6 +116,8 @@ def process(path: Path, outdir: Path, beats_file: Path | None):
             "chord_histogram": hist,
         },
     }
+    if conflicts:
+        result["ensemble"] = conflicts
     outdir.mkdir(parents=True, exist_ok=True)
     stem = path.stem.removesuffix(".raw")
     dest = outdir / f"{stem}.chords.json"
@@ -112,6 +132,9 @@ def process(path: Path, outdir: Path, beats_file: Path | None):
     top = ", ".join(f"{k}({fmt_sec(v)})" for k, v in list(hist.items())[:8])
     print(f"{path.stem}: {len(out_chords)} chords | key={key or '?'}")
     print(f"  top: {top}")
+    if conflicts:
+        print(f"  ensemble: agreement={conflicts['agreement']:.1%}, "
+              f"conflict={conflicts['conflict_seconds']}s — 见 chords[].confidence")
     print(f"  -> {dest}")
 
 
