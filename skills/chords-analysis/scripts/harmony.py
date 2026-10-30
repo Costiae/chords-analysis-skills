@@ -116,6 +116,49 @@ def key_candidates(profile, top=4, use_flats=False):
     return out[:top]
 
 
+MAJOR_STEPS = (0, 2, 4, 5, 7, 9, 11)
+MINOR_STEPS = (0, 2, 3, 5, 7, 8, 10)
+
+
+def scale_pcs(key_str):
+    """调名 -> 调内音级集合。小调额外包含导音(和声小调)。"""
+    root, mode = key_str.split(" ", 1)
+    i = pc_index(root)
+    steps = MINOR_STEPS if mode.startswith("min") else MAJOR_STEPS
+    pcs = {(i + s) % 12 for s in steps}
+    if mode.startswith("min"):
+        pcs.add((i + 11) % 12)
+    return pcs
+
+
+def diatonic_coverage(chords, key_str):
+    """和弦音落在调内的时长加权比例(0..1)。
+
+    Krumhansl 只比较音级分布,相邻调(尤其是三度/五度远的关系)常常几乎同分:
+    同一批和弦音可以是 Cb major(B major)的调内音,也可以属于 Db major。
+    三和弦里的特征音(F 自然 vs F#)能把两者分开,所以用和弦本体的音做覆盖检查。
+    """
+    if not chords:
+        return 0.0
+    pcs = scale_pcs(key_str)
+    num = den = 0.0
+    for c in chords:
+        label = c.get("label") if isinstance(c, dict) else c
+        if isinstance(c, dict):
+            dur = max(0.0, float(c.get("end", 0.0)) - float(c.get("start", 0.0)))
+        else:
+            dur = 1.0
+        if not label or label == "N" or dur <= 0:
+            continue
+        tones = label_pitch_classes(label)
+        if not tones:
+            continue
+        hit = sum(1 for t in tones if pc_index(t) in pcs) / len(tones)
+        num += hit * dur
+        den += dur
+    return round(num / den, 3) if den else 0.0
+
+
 def merge_profiles(*profiles):
     """按音级名称合并多个分布(自动对齐 sharp/flat 拼写)。"""
     merged = {pc: 0.0 for pc in PC_SHARP}

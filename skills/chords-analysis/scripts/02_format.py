@@ -163,6 +163,7 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
                      "conflict_seconds": round(conf_secs, 1)}
 
     song = dict(doc["song"])
+    song_dur = float(song.get("duration_sec") or 1.0)
     # ---- 调性:和弦 + 旋律双证据 + 乐句终止音,sharp/flat 两套拼写取更优 ----
     melody_prof = None
     if melody_notes:
@@ -179,19 +180,26 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
         if melody_prof:
             mel = {H.pc_name(H.pc_index(k), use_flats): v for k, v in melody_prof.items()}
             cs, ms = sum(prof.values()) or 1, sum(mel.values()) or 1
+            # 旋律稀疏时(纯器乐/人声很轻)降低其权重:两三个音不足以改写调性
+            mel_w = 1.2 * min(1.0, sum(melody_prof.values()) / max(1e-6, song_dur))
             for k in prof:
-                prof[k] += mel.get(k, 0.0) * (cs / ms) * 1.2   # 旋律略加权
+                prof[k] += mel.get(k, 0.0) * (cs / ms) * mel_w
         return prof
 
     def rank_keys(use_flats, top=4):
         """相对大/小调同音集无法区分时,用乐句终止音的属主音权重打破平局。"""
-        cands = H.key_candidates(combined_profile(use_flats), top=8, use_flats=use_flats)
+        cands = H.key_candidates(combined_profile(use_flats), top=24, use_flats=use_flats)
         total_ends = sum(end_weight.values()) or 1
+        # 终止音证据至少 3 个样本才满权重
+        end_scale = min(1.0, len(phrase_ends) / 3.0)
         for c in cands:
             tonic_share = end_weight.get(H.pc_index(c["root"]), 0.0) / total_ends
             # 相对关系调(大/小)同主音,终止音证据能直接分开
             c["tonic_evidence"] = round(tonic_share, 3)
-            c["score"] = round(c["score"] + 0.6 * tonic_share, 3)
+            c["diatonic"] = H.diatonic_coverage(out_chords, c["key"])
+            # Krumhansl 相关 + 调内覆盖率 + 旋律终止音证据
+            c["score"] = round(0.55 * c["score"] + 0.45 * c["diatonic"]
+                               + 0.6 * tonic_share * end_scale, 3)
         cands.sort(key=lambda x: -x["score"])
         return cands[:top]
 
@@ -220,16 +228,24 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
                     pc = H.pc_name(n["midi"] % 12, seg_use_flats)
                     mel[pc] = mel.get(pc, 0.0) + (n["end"] - n["start"])
                 cs, ms = sum(seg_prof.values()) or 1, sum(mel.values()) or 1
+                # 同上:旋律时长占本段比例越低,权重越小(器乐段几乎不参与)
+                mel_w = 1.2 * min(1.0, sum(mel.values()) / max(1e-6, seg["end"] - seg["start"]))
                 for k in seg_prof:
-                    seg_prof[k] += mel.get(k, 0.0) * (cs / ms) * 1.2
+                    seg_prof[k] += mel.get(k, 0.0) * (cs / ms) * mel_w
             seg_ends = [n for n in phrase_ends
                         if seg["start"] <= n["time"] < seg["end"]]
-            seg_keys = H.key_candidates(seg_prof, top=6, use_flats=seg_use_flats)
+            # 终止音证据至少 3 个样本才满权重,避免单个音决定调性
+            ev_scale = min(1.0, len(seg_ends) / 3.0)
+            seg_keys = H.key_candidates(seg_prof, top=24, use_flats=seg_use_flats)
             tot = len(seg_ends) or 1
             for c in seg_keys:
-                ev = sum(1 for e in seg_ends if e["midi"] % 12 == H.pc_index(c["root"])) / tot
-                c["tonic_evidence"] = round(ev, 3)
-                c["score"] = round(c["score"] + 0.6 * ev, 3)
+                raw_ev = sum(1 for e in seg_ends
+                             if e["midi"] % 12 == H.pc_index(c["root"])) / tot
+                ev = raw_ev * ev_scale
+                c["corr"] = c["score"]
+                c["tonic_evidence"] = round(raw_ev, 3)
+                c["diatonic"] = H.diatonic_coverage(seg_chords, c["key"])
+                c["score"] = round(0.55 * c["corr"] + 0.45 * c["diatonic"] + 0.25 * ev, 3)
             seg_keys.sort(key=lambda x: -x["score"])
             if not seg_keys:
                 continue
@@ -246,9 +262,11 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
                     prev_key = prev["key"]
             stable = None
             if strong and prev_key:
-                alt = H.key_score(seg_prof, prev_key, seg_use_flats)
-                alt += 0.6 * sum(1 for e in seg_ends
-                                 if e["midi"] % 12 == H.pc_index(prev_key.split()[0])) / tot
+                prev_e = sum(1 for e in seg_ends
+                             if e["midi"] % 12 == H.pc_index(prev_key.split()[0])) / tot
+                alt = (0.55 * H.key_score(seg_prof, prev_key, seg_use_flats)
+                       + 0.45 * H.diatonic_coverage(seg_chords, prev_key)
+                       + 0.25 * prev_e * ev_scale)
                 if seg_keys[0]["score"] - alt < 0.12:
                     stable = H.canonical_key_name(prev_key)
             if strong:
@@ -256,7 +274,8 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
                 seg["key_confidence"] = seg_keys[0]["score"]
                 seg["key_source"] = "stable" if stable else "estimated"
                 seg["key_candidates"] = [{"key": H.canonical_key_name(k["key"]),
-                                          "score": k["score"]}
+                                          "score": k["score"],
+                                          "diatonic": k.get("diatonic")}
                                          for k in seg_keys[:2]]
             else:
                 # 短段/弱证据:继承上一个可信段落的调性(避免半音拼写漂移)
@@ -270,7 +289,8 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
                 seg["key_confidence"] = seg_keys[0]["score"]
                 seg["key_source"] = "inherited"
                 seg["key_candidates"] = [{"key": H.canonical_key_name(k["key"]),
-                                          "score": k["score"]}
+                                          "score": k["score"],
+                                          "diatonic": k.get("diatonic")}
                                          for k in seg_keys[:2]]
 
     # ---- 等音规范化(按段落调性)+ 转位(斜杠和弦) ----
@@ -312,6 +332,7 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
         song["key"] = key
         song["key_candidates"] = [{"key": H.canonical_key_name(k["key"]),
                                    "score": k["score"],
+                                   "diatonic": k.get("diatonic"),
                                    "tonic_evidence": k.get("tonic_evidence")}
                                   for k in key_cands[:3]]
         song["key_evidence"] = {
