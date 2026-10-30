@@ -93,7 +93,8 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
 
     # 大词汇和弦质量(01d_quality.py;神经大词汇模型可用时优先于它)
     quality_doc = None
-    if quality_file and quality_file.exists():
+    engine = (doc.get("song") or {}).get("engine", "")
+    if quality_file and quality_file.exists() and "btc" not in engine.lower():
         quality_doc = json.loads(quality_file.read_text(encoding="utf-8-sig"))
     quality_by_start = {}
     for q in ((quality_doc or {}).get("chords") or []):
@@ -242,6 +243,21 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
             if s["start"] <= t < s["end"] and s.get("key"):
                 return s["key"]
         return key
+
+    # 全局调性:段落调性按时长加权(比整曲 KK 更稳,也能暴露双调性)
+    if segments:
+        dur_by_key = defaultdict(float)
+        for s in segments:
+            if s.get("key"):
+                dur_by_key[s["key"]] += s["end"] - s["start"]
+        if dur_by_key:
+            ranked = sorted(dur_by_key.items(), key=lambda x: -x[1])
+            key = ranked[0][0]
+            song["key_by_section"] = [{"key": k, "seconds": round(v, 1)}
+                                      for k, v in ranked]
+            total = sum(dur_by_key.values())
+            if len(ranked) > 1 and ranked[1][1] / max(1e-9, ranked[0][1]) > 0.6:
+                song["key_ambiguous"] = True
 
     for c in out_chords:
         k = key_for_time(c["start"])

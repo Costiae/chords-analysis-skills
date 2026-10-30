@@ -17,7 +17,16 @@ QUALITY_INTERVALS = {
     "maj7": [0, 4, 7, 11], "min7": [0, 3, 7, 10], "7": [0, 4, 7, 10],
     "hdim7": [0, 3, 6, 10], "dim7": [0, 3, 6, 9],
     "sus2": [0, 2, 7], "sus4": [0, 5, 7], "6": [0, 4, 7, 9], "min6": [0, 3, 7, 9],
+    "maj6": [0, 4, 7, 9], "minmaj7": [0, 3, 7, 11],
 }
+
+# 不同引擎的标签别名(BTC 用 maj6,Chordino 用 6 …)
+QUALITY_ALIASES = {"maj6": "6", "m6": "min6", "sus": "sus4", "dom7": "7",
+                   "minmaj7": "minmaj7"}
+
+
+def canonical_quality(q: str) -> str:
+    return QUALITY_ALIASES.get(q, q)
 
 KK_MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]
 KK_MINOR = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
@@ -52,6 +61,7 @@ def label_pitch_classes(label: str, use_flats=False):
     root, qual = parse_label(label)
     if root is None:
         return []
+    qual = canonical_quality(qual)
     intervals = QUALITY_INTERVALS.get(qual, [0, 4, 7])
     r = pc_index(root)
     return [pc_name((r + i) % 12, use_flats) for i in intervals]

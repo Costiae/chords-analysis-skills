@@ -49,13 +49,31 @@ def run_engine(audio: Path, name: str, detect):
         return None
 
 
+CORE_QUALITY = {
+    "maj": "maj", "maj7": "maj", "6": "maj", "7": "maj",
+    "sus2": "sus", "sus4": "sus",
+    "min": "min", "min7": "min", "min6": "min",
+    "dim": "dim", "hdim7": "dim", "dim7": "dim",
+    "aug": "aug",
+}
+
+
 def quality_compatible(a: str, b: str) -> bool:
-    """实质一致:完全相同,或仅 maj/min 混淆(最常见且影响最小的分歧)。"""
+    """跨词汇表的"实质一致"判定:根音相同且三和弦核心一致。
+
+    大词汇引擎(VTC/BTC)会给 maj7 / 7 / sus,小词汇引擎只给 maj/min;
+    不能因为扩展音不同就判为冲突,否则 ensemble 一致率被系统性低估。"""
     if a == b:
         return True
     ra, qa = (a.split(":", 1) + [""])[:2]
     rb, qb = (b.split(":", 1) + [""])[:2]
-    return ra == rb and {qa, qb} <= {"maj", "min"}
+    if ra != rb:
+        return False
+    ca, cb = CORE_QUALITY.get(qa, qa), CORE_QUALITY.get(qb, qb)
+    # maj/min 混淆(最常见的引擎差异)不计为冲突
+    if {ca, cb} <= {"maj", "min"}:
+        return True
+    return ca == cb
 
 
 def build_ensemble_intervals(results: dict):

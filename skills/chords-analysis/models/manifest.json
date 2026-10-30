@@ -80,6 +80,22 @@
       "optional": false,
       "license": "MIT (demucs) / weights per upstream",
       "artifacts": []
+    },
+    "btc-chord": {
+      "purpose": "BTC large-vocabulary chord recognition (170 classes: maj/min/dim/aug/6/7/min7/maj7/sus). Powers engine btc-170.",
+      "optional": true,
+      "license": "MIT",
+      "source": "puar-playground/btc-chord (HuggingFace packaging of jayg996/BTC-ISMIR19)",
+      "cache_subdir": "btc-chord",
+      "artifacts": [
+        {
+          "kind": "hf_snapshot",
+          "repo": "puar-playground/btc-chord",
+          "file": "btc-chord",
+          "revision": "d436f2f664f5107cd987774279b8ce171846e376",
+          "allow_patterns": ["*.py", "*.json", "*.pt"]
+        }
+      ]
     }
   },
   "optional_slots": {

@@ -128,12 +128,42 @@ def fetch(urls, dest: Path, expect_sha=None, expect_size=None,
 
 
 def artifacts(model: dict) -> list:
-    return [a for a in model.get("artifacts", []) if a.get("kind") in (None, "checkpoint")]
+    return [a for a in model.get("artifacts", [])
+            if a.get("kind") in (None, "checkpoint", "hf_snapshot")]
+
+
+def fetch_hf_snapshot(entry: dict, model: dict) -> bool:
+    """HF 仓库快照(需要代码+权重一起拉,如 trust_remote_code 模型)。"""
+    try:
+        from huggingface_hub import snapshot_download
+    except Exception as e:
+        print(f"  huggingface_hub unavailable: {e}", file=sys.stderr)
+        return False
+    dest = DEFAULT_CACHE / entry.get("file", model.get("cache_subdir", "snapshot"))
+    rev = entry.get("revision") or os.environ.get("CHORDS_BTC_REVISION")
+    kw = dict(repo_id=entry["repo"], revision=rev, local_dir=str(dest),
+              allow_patterns=entry.get("allow_patterns") or ["*.py", "*.json", "*.pt"],
+              max_workers=4)
+    ep = mirror_base()
+    if ep:
+        kw["endpoint"] = ep
+    try:
+        snapshot_download(**kw)
+        return True
+    except Exception as e:
+        print(f"  snapshot failed: {type(e).__name__}: {e}", file=sys.stderr)
+        return False
 
 
 def fetch_model(name: str, model: dict, quiet=False) -> bool:
     ok_all = True
     for a in artifacts(model):
+        if a.get("kind") == "hf_snapshot":
+            if not quiet:
+                print(f"  snapshot {a['repo']} ...")
+            if not fetch_hf_snapshot(a, model):
+                ok_all = False
+            continue
         dest = dest_for(a, model)
         if dest.exists() and (not a.get("sha256") or sha256_of(dest) == a["sha256"]):
             if not quiet:
@@ -204,7 +234,14 @@ def status():
     print(f"mirror:    {mirror_base() or '(official only)'}")
     for name, model in manifest.get("models", {}).items():
         arts = artifacts(model)
-        present = [a for a in arts if dest_for(a, model).exists()]
+        present = []
+        for a in arts:
+            if a.get("kind") == "hf_snapshot":
+                d = DEFAULT_CACHE / a.get("file", model.get("cache_subdir", "snapshot"))
+                if d.exists() and any(d.iterdir()):
+                    present.append(a)
+            elif dest_for(a, model).exists():
+                present.append(a)
         optional = " (optional)" if model.get("optional") else ""
         print(f"- {name}{optional}: {len(present)}/{len(arts)} artifacts"
               f" | {model.get('purpose', '')}")

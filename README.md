@@ -51,20 +51,24 @@ report generated from the JSON.
 
 ```
 audio/xxx.flac
-  │  scripts/01_extract.py    chord recognition (madmom DeepChroma + CNN-CRF ensemble)
+  │  scripts/run_all.py         ← one-shot orchestrator (per-layer OK/SKIP report)
+  │
+  ├─ 01_extract.py             chords: BTC-170 + madmom-cnn ensemble (falls back to madmom×2)
+  ├─ 01b_structure.py          segments, beats, downbeats, BPM, meter, tempo curve
+  ├─ 01c_voices.py             demucs stems → pyin melody (key evidence) + bass notes
+  ├─ 01d_quality.py            template quality refinement (skipped when BTC active)
+  ├─ 01e_transcribe.py         Basic Pitch per stem → MIDI + note events
   ▼
-out/xxx.raw.json               raw engine output + agreement/conflict intervals
-out/xxx.struct.json            ← 01b_structure.py: segments, beats, BPM, meter
-out/xxx.voices.json            ← 01c_voices.py: melody notes/key evidence, bass notes
-  │  scripts/02_format.py     fuse into chords-v1: bar/beat/section per chord,
-  │                           three-source key inference, section-local keys,
-  │                           enharmonic spelling, slash chords
+out/xxx.struct.json / xxx.voices.json / xxx.quality.json / xxx.transcription.json
+  │  scripts/02_format.py      fuse into chords-v1: bar/beat/section/bass per chord,
+  │                            multi-evidence key, section-local keys, spelling, slash chords
   ▼
-out/xxx.chords.json    ★ standard chords-v1 (authoritative) + xxx.lab (MIREX)
-  │  scripts/03_summarize.py  merged timeline + harmonic rhythm stats
-  │  scripts/04_map.py        harmonic map: bar grid + Roman numerals + n-grams
+out/xxx.chords.json  ★ authoritative + xxx.lab (MIREX)
+  │  scripts/03_summarize.py   timeline + harmonic rhythm
+  │  scripts/04_map.py         harmonic map (bar grid, Roman numerals, n-grams)
+  │  scripts/05_eval.py        mir_eval regression vs reference annotation
   ▼
-out/xxx.map.md + out/xxx.analysis.md
+out/xxx.map.md · xxx.midi · xxx.analysis.md
 ```
 
 ## What a complete analysis covers
@@ -72,22 +76,34 @@ out/xxx.map.md + out/xxx.analysis.md
 | Layer | Source | Output |
 |---|---|---|
 | Chords | madmom ensemble (2 engines, cross-validated) | onset/offset + confidence |
+| **Large-vocab chords** | **BTC-170 (BTC transformer, HF weights)** | **170 classes: maj7/min7/7/sus/dim/aug** |
 | Bar grid | all-in-one downbeats + meter | `bar` / `beat` per chord |
 | Sections | all-in-one functional labels | intro/verse/chorus/bridge/outro |
-| Tempo | all-in-one | BPM + meter |
+| Tempo | all-in-one + beat-interval curve | BPM + meter + tempo curve |
 | Melody | demucs vocals + pyin | notes, pitch-class profile, phrase endings |
 | Bass / inversions | demucs bass + pyin | slash chords (`C:maj/E`) |
-| Chord quality | `01d_quality.py` chroma templates (offline) | maj7/min7/7/sus/dim/aug, 13 qualities |
-| Key / mode | chords + melody + phrase anchors | candidates with evidence scores |
+| Chord quality | BTC-170 → template fallback | maj7/min7/7/sus/dim/aug |
+| **Transcription** | **Basic Pitch per demucs stem** | **note events + MIDI per stem** |
+| Key / mode | chords + melody + phrase anchors + section weighting | candidates with evidence |
 | Modulations | per-section key estimation | `song.modulations`, per-segment keys |
 | Progressions | n-gram mining | repeated progressions with Roman numerals |
+| Evaluation | mir_eval (05_eval.py) | root/majmin/triad/sevenths/mirex |
 
 Honest gaps (not yet automated): instrument identification beyond the four
-demucs stems, tempo curves for rubato passages, and full polyphonic
-transcription (melody is monophonic pyin on the vocal stem). Chord qualities are
-template-inferred offline — a neural large-vocabulary model can be registered in
-`scripts/engines.py` (optional slot `chord-lv` in `models/manifest.json`) and
-will take precedence, with the template path as automatic fallback.
+demucs stems, and dense polyphonic transcription (piano/orchestral textures —
+Basic Pitch is monophonic-leaning and best on vocals/guitar; piano needs a
+dedicated model). Tempo curves are derived from beat intervals, so extreme rubato
+is approximated.
+
+## Reproducibility
+
+- Weights are pinned: BTC to a **commit sha**, harmonix artifacts to **sha256**;
+  `models.py` verifies every download and never silently upgrades.
+- `--check-updates` reports remote changes without applying them — upgrades are
+  an explicit decision, then re-run `05_eval.py` against a reference `.lab` to
+  confirm the change is actually an improvement.
+- Degradation order is fixed and reported: BTC-170 → madmom ensemble → template
+  quality → maj/min; structure → beat-only; melody → bass-only; transcription → skipped.
 
 ## Model fetching
 

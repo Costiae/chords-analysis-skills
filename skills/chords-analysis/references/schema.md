@@ -63,14 +63,18 @@
 
 ## 衍生文件
 
-| 文件 | 内容 |
+| File | Content |
 |---|---|
-| `<name>.chords.json` | 上面的标准格式(权威数据) |
-| `<name>.struct.json` | 结构模型原始输出(段落/拍/BPM/拍号) |
-| `<name>.voices.json` | 旋律音符 + 音级分布 + 乐句终止音 + 低音音符 |
-| `<name>.lab` | MIREX .lab 时间标签,便于外部工具(Sonic Visualiser 等) |
-| `<name>.map.md` | **和声地图**:小节网格 + 级数 + 段落进行 + 重复进行挖掘 |
-| `<name>.analysis.md` | LLM 生成的分析报告 |
+| `<name>.chords.json` | standard chords-v1 (authoritative) |
+| `<name>.struct.json` | structure model raw output (segments/beats/BPM/meter/tempo curve) |
+| `<name>.voices.json` | melody notes + pitch-class profile + phrase endings + bass notes |
+| `<name>.quality.json` | offline quality refinement (template; skipped when BTC is active) |
+| `<name>.transcription.json` | Basic Pitch note events per stem |
+| `<name>.midi`, `<name>.<stem>.midi` | transcription MIDI (combined + per stem) |
+| `<name>.lab` | MIREX .lab time tags (Sonic Visualiser, mir_eval) |
+| `<name>.map.md` | **harmonic map**: bar grid + Roman numerals + section progressions + n-grams |
+| `<name>.chords.eval.json` | evaluation scores vs a reference annotation (05_eval.py) |
+| `<name>.analysis.md` | LLM analysis report |
 
 ## LLM 分析约定
 

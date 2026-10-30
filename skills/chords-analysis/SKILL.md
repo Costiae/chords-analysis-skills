@@ -57,6 +57,9 @@ If setup fails, report the error to the user; do not silently switch engines.
 
 ## Workflow steps
 
+0. **One-shot alternative**: `python run_all.py audio/<file> --outdir out` runs every
+   step below in order and prints a per-layer OK/SKIP summary. Use it unless a
+   step needs manual attention.
 1. **Locate input**: find the audio the user refers to (default scan `audio/` for
    mp3/wav/flac/m4a/ogg/aiff).
 2. **Extract chords** (accuracy-first: ensemble cross-validation by default):
@@ -86,16 +89,24 @@ If setup fails, report the error to the user; do not silently switch engines.
    and on the bass stem (bass notes → slash chords). Vocals are the primary key
    evidence; if the track is instrumental the melody step fails gracefully and
    only bass is used.
-2d. **Chord quality (large vocabulary, offline fallback)**:
+2d. **Chord quality (large vocabulary)** — order matters:
+   - If engine `btc-170` is available (weights cached), **skip this step**: BTC
+     already outputs 170-class labels and 02_format ignores the template file
+     when the engine is BTC.
+   - Otherwise run the offline fallback:
    ```
    <PY> -W ignore <skill-dir>/scripts/01d_quality.py audio/<file> out/<name>.raw.json --outdir out
    ```
-   Keeps madmom's root, refines the quality by chroma template matching over
-   13 qualities (maj/min/dim/aug/maj7/min7/7/hdim7/dim7/sus2/sus4/6/min6) with
-   family restriction, energy validation and per-quality margins. This is the
-   fallback when no neural large-vocabulary model is installed. A neural model
-   registered in `scripts/engines.py` (see `models/manifest.json` → optional slot
-   `chord-lv`) takes precedence when available.
+   Keeps madmom's root, refines quality by chroma template matching over
+   13 qualities, with family restriction (never flips the third), energy
+   validation and per-quality margins.
+2e. **Transcription (扒谱, optional)**:
+   ```
+   <PY> -W ignore <skill-dir>/scripts/01e_transcribe.py audio/<file> --outdir out
+   ```
+   Basic Pitch per demucs stem (vocals/bass/other), monophonic filtering on
+   vocals/bass, per-stem MIDI + combined MIDI + note JSON. Skips cleanly when
+   basic-pitch is not installed.
 
 ## Model fetching (shared, mirror-aware)
 
@@ -110,10 +121,11 @@ All remote weights go through `scripts/models.py` + `models/manifest.json`:
 - Mirror: `CHORDS_HF_MIRROR` or `HF_ENDPOINT` (defaults to `https://hf-mirror.com`);
   set to `none` to force the official source.
 - Every artifact is sha256-verified and atomically replaced; downloads resume.
+- HF-repo models (BTC) are pinned to a **commit sha** in the manifest, never `main`.
 - **Never let a download failure abort the pipeline** — each stage degrades:
-  structure → madmom beats; melody → bass only; large-vocab model → template
-  quality refinement; quality refinement → raw maj/min. Always report which
-  layer degraded and why.
+  BTC-170 → madmom ensemble; structure → madmom beats; melody → bass only;
+  large-vocab → template quality refinement; quality → raw maj/min;
+  transcription → skipped. Always report which layer degraded and why.
 3. **Format**:
    ```
    <PY> -W ignore <skill-dir>/scripts/02_format.py out/<name>.raw.json --outdir out
@@ -141,6 +153,13 @@ All remote weights go through `scripts/models.py` + `models/manifest.json`:
    first, then read `chords` in slices as needed), then answer or write a report to
    `out/<name>.analysis.md` following the "LLM analysis conventions" in
    `references/schema.md`.
+6. **Regression check (optional)**: with a reference annotation,
+   ```
+   <PY> -W ignore <skill-dir>/scripts/05_eval.py out/<name>.chords.json ref.lab --vocab mirex
+   ```
+   prints root/majmin/triad/sevenths/mirex scores (mir_eval) and writes
+   `<name>.chords.eval.json`. Run this before/after changing engines instead of
+   arguing from impressions.
 
 ## Analysis requirements
 

@@ -34,19 +34,38 @@ def find_audio(path: Path):
     return sorted(p for p in path.rglob("*") if p.suffix.lower() in AUDIO_EXT)
 
 
+def tempo_curve(beats, window=8, hop=4):
+    """从节拍时间序列推导瞬时 BPM(滑动窗口),捕捉渐慢/渐快。"""
+    if not beats or len(beats) < window + 1:
+        return []
+    curve = []
+    for i in range(0, len(beats) - window, hop):
+        span = beats[i + window] - beats[i]
+        if span <= 0:
+            continue
+        bpm = 60.0 * window / span
+        curve.append({"time": round(beats[i], 2), "bpm": round(bpm, 1)})
+    return curve
+
+
 def run_allin1(audio: Path):
     import allin1_infer as allin1
     r = allin1.analyze(str(audio), keep_byproducts=False)
     beat_positions = list(getattr(r, "beat_positions", None) or [])
     meter = max(beat_positions) if beat_positions else None
+    beats = [round(float(b), 3) for b in (r.beats or [])]
+    curve = tempo_curve(beats)
     return {
         "schema": "struct-v1",
         "bpm": float(r.bpm) if r.bpm else None,
         "meter": meter,
-        "beats": [round(float(b), 3) for b in (r.beats or [])],
+        "beats": beats,
         "downbeats": [round(float(b), 3) for b in (r.downbeats or [])],
         "segments": [{"start": round(float(s.start), 3), "end": round(float(s.end), 3),
                       "label": str(s.label)} for s in (r.segments or [])],
+        "tempo_curve": curve,
+        "tempo_range": ([min(c["bpm"] for c in curve), max(c["bpm"] for c in curve)]
+                        if curve else None),
         "engine": "allin1",
     }
 

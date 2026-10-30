@@ -76,6 +76,15 @@ def setup_conda(name):
     if r.returncode != 0:
         print("[WARN] all-in-one-infer install failed; structure analysis (01b) "
               "will fall back to madmom beat tracking (no segment labels)")
+    # large-vocabulary chords (BTC engine) + transcription (Basic Pitch) + eval.
+    # transformers must stay <5 on Python 3.9.
+    r = pip_install(py, "transformers<5", "huggingface_hub", "mir_eval")
+    if r.returncode != 0:
+        print("[WARN] transformers missing: engine btc-170 unavailable, "
+              "quality falls back to the offline template method")
+    r = pip_install(py, "basic-pitch")
+    if r.returncode != 0:
+        print("[WARN] basic-pitch missing: transcription layer (01e) skipped")
     return py
 
 
