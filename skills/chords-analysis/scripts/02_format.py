@@ -11,6 +11,7 @@
 import argparse, json, bisect, sys
 from pathlib import Path
 from collections import defaultdict
+from typing import Optional
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -57,7 +58,7 @@ def fmt_sec(s):
     return f"{int(s // 60)}:{s % 60:04.1f}"
 
 
-def process(path: Path, outdir: Path, beats_file: Path | None, struct_file: Path | None):
+def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: Optional[Path]):
     doc = json.loads(path.read_text(encoding="utf-8-sig"))
     chords = merge_short(doc["chords"])
 

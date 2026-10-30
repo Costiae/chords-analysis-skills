@@ -63,25 +63,45 @@ def run_madmom_beats(audio: Path):
     }
 
 
+def resample_44k(audio: Path, tmpdir: Path) -> Path:
+    """allin1/madmom 频谱链按 44.1kHz 设计(81 filterbank bins)。
+    非 44.1k 输入(48k/96k hi-res 音频)会导致 bins 数不匹配而崩溃或精度下降,
+    统一重采样到 44.1k 单声道再分析。"""
+    import librosa, soundfile as sf
+    y, sr = librosa.load(str(audio), sr=None, mono=True)
+    if abs(sr - 44100) < 1:
+        return audio
+    dest = tmpdir / f"{audio.stem}.44k.wav"
+    if not dest.exists():
+        y44 = librosa.resample(y, orig_sr=sr, target_sr=44100)
+        sf.write(str(dest), y44, 44100)
+        print(f"[{audio.name}] resampled {sr}Hz -> 44100Hz for analysis", flush=True)
+    return dest
+
+
 def process(audio: Path, outdir: Path) -> bool:
+    orig_stem = audio.stem
+    tmpdir = outdir / ".resampled"
+    tmpdir.mkdir(parents=True, exist_ok=True)
+    audio = resample_44k(audio, tmpdir)
     try:
-        print(f"[{audio.name}] structure: all-in-one-infer ...", flush=True)
+        print(f"[{orig_stem}] structure: all-in-one-infer ...", flush=True)
         doc = run_allin1(audio)
     except Exception as e:
-        print(f"[{audio.name}] allin1 failed ({type(e).__name__}: {e}), "
+        print(f"[{orig_stem}] allin1 failed ({type(e).__name__}: {e}), "
               f"falling back to madmom beats", file=sys.stderr, flush=True)
         try:
             doc = run_madmom_beats(audio)
         except Exception as e2:
-            print(f"[{audio.name}] structure FAILED entirely: {e2}", file=sys.stderr)
+            print(f"[{orig_stem}] structure FAILED entirely: {e2}", file=sys.stderr)
             return False
-    dest = outdir / f"{audio.stem}.struct.json"
+    dest = outdir / f"{orig_stem}.struct.json"
     dest.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
     segs = doc["segments"]
-    print(f"[{audio.name}] OK bpm={doc['bpm']} beats={len(doc['beats'])} "
+    print(f"[{orig_stem}] OK bpm={doc['bpm']} beats={len(doc['beats'])} "
           f"segments={len(segs)} engine={doc['engine']} -> {dest}", flush=True)
     if segs:
-        preview = " ".join(f"{s['label']}[{s['start']:.0f}-{s['end']:.0f}s]" for s in segs[:8])
+        preview = " ".join(f"{s['label']}[{s['start']:.0f}-{s['end']:.0f}s]" for s in segs[:10])
         print(f"  segments: {preview}", flush=True)
     return True
 

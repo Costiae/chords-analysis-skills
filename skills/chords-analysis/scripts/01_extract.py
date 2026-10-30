@@ -94,7 +94,25 @@ def audio_duration(audio: Path):
         return None
 
 
+def resample_44k(audio: Path, tmpdir: Path) -> Path:
+    """madmom 频谱链按 44.1kHz 设计;hi-res 音频(48k/96k)会降低识别精度,
+    统一重采样到 44.1k 单声道再分析(与 01b_structure.py 保持一致)。"""
+    import librosa, soundfile as sf
+    y, sr = librosa.load(str(audio), sr=None, mono=True)
+    if abs(sr - 44100) < 1:
+        return audio
+    tmpdir.mkdir(parents=True, exist_ok=True)
+    dest = tmpdir / f"{audio.stem}.44k.wav"
+    if not dest.exists():
+        y44 = librosa.resample(y, orig_sr=sr, target_sr=44100)
+        sf.write(str(dest), y44, 44100)
+        print(f"[{audio.name}] resampled {sr}Hz -> 44100Hz for analysis", flush=True)
+    return dest
+
+
 def process(audio: Path, outdir: Path, engine_arg: str):
+    orig_stem = audio.stem
+    audio = resample_44k(audio, outdir / ".resampled")
     # 解析引擎选择
     if engine_arg == "ensemble":
         chosen = ENG.default_ensemble()
@@ -114,10 +132,10 @@ def process(audio: Path, outdir: Path, engine_arg: str):
             results[name] = r
             primary_name = primary_name or name
     if not results:
-        print(f"[{audio.name}] FAILED: all engines failed", file=sys.stderr)
+        print(f"[{orig_stem}] FAILED: all engines failed", file=sys.stderr)
         return False
     if primary_name != chosen[0][0]:
-        print(f"[{audio.name}] primary engine {chosen[0][0]} unavailable, "
+        print(f"[{orig_stem}] primary engine {chosen[0][0]} unavailable, "
               f"using {primary_name}", flush=True)
 
     result = results[primary_name]
@@ -136,16 +154,16 @@ def process(audio: Path, outdir: Path, engine_arg: str):
 
     doc = {
         "schema": "chords-raw-v1",
-        "song": {"title": audio.stem, "source_file": str(audio),
+        "song": {"title": orig_stem, "source_file": str(audio),
                  "duration_sec": dur,
                  "engine": "+".join(results) if ensemble else primary_name},
         "chords": result,
     }
     if ensemble:
         doc["ensemble"] = ensemble
-    dest = outdir / f"{audio.stem}.raw.json"
+    dest = outdir / f"{orig_stem}.raw.json"
     dest.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"[{audio.name}] OK {len(result)} chords (engine={doc['song']['engine']}) "
+    print(f"[{orig_stem}] OK {len(result)} chords (engine={doc['song']['engine']}) "
           f"-> {dest}", flush=True)
     return True
 
