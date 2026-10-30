@@ -231,9 +231,44 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
                 c["tonic_evidence"] = round(ev, 3)
                 c["score"] = round(c["score"] + 0.6 * ev, 3)
             seg_keys.sort(key=lambda x: -x["score"])
-            if seg_keys:
-                seg["key"] = H.canonical_key_name(seg_keys[0]["key"])
+            if not seg_keys:
+                continue
+            dur = seg["end"] - seg["start"]
+            strong = (dur >= 12 and len(seg_chords) >= 4
+                      and seg_keys[0]["score"] >= 0.5)
+            # 稳定性先验:上一段调性在本段得分接近最优时保持不变
+            # (解决 A major ↔ F# minor / Bb major ↔ G minor 这类关系调摇摆)
+            prev_key = None
+            for prev in segments:
+                if prev is seg:
+                    break
+                if prev.get("key"):
+                    prev_key = prev["key"]
+            stable = None
+            if strong and prev_key:
+                alt = H.key_score(seg_prof, prev_key, seg_use_flats)
+                alt += 0.6 * sum(1 for e in seg_ends
+                                 if e["midi"] % 12 == H.pc_index(prev_key.split()[0])) / tot
+                if seg_keys[0]["score"] - alt < 0.12:
+                    stable = H.canonical_key_name(prev_key)
+            if strong:
+                seg["key"] = stable or H.canonical_key_name(seg_keys[0]["key"])
                 seg["key_confidence"] = seg_keys[0]["score"]
+                seg["key_source"] = "stable" if stable else "estimated"
+                seg["key_candidates"] = [{"key": H.canonical_key_name(k["key"]),
+                                          "score": k["score"]}
+                                         for k in seg_keys[:2]]
+            else:
+                # 短段/弱证据:继承上一个可信段落的调性(避免半音拼写漂移)
+                inherited = key if key else H.canonical_key_name(seg_keys[0]["key"])
+                for prev in segments:
+                    if prev is seg:
+                        break
+                    if prev.get("key") and prev.get("key_source") == "estimated":
+                        inherited = prev["key"]
+                seg["key"] = inherited
+                seg["key_confidence"] = seg_keys[0]["score"]
+                seg["key_source"] = "inherited"
                 seg["key_candidates"] = [{"key": H.canonical_key_name(k["key"]),
                                           "score": k["score"]}
                                          for k in seg_keys[:2]]

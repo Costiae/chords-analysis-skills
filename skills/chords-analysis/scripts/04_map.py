@@ -76,6 +76,15 @@ def main():
                 return s["key"]
         return global_key
 
+    def key_over_span(t0, t1):
+        """按时间跨度取重叠最长的段落调性(避免边界前 0.1s 取错段)。"""
+        best, best_ov = None, 0.0
+        for s in segments:
+            ov = min(s["end"], t1) - max(s["start"], t0)
+            if ov > best_ov and s.get("key"):
+                best, best_ov = s["key"], ov
+        return best or key_at(t0)
+
     out = []
     out.append(f"# {song.get('title', Path(args.input).stem)} — 和声地图")
     out.append("")
@@ -154,10 +163,12 @@ def main():
             out.append("")
 
     # ---- 进行挖掘(n-gram)----
-    seq = []
+    # 注意:去重后的序号不能拿去索引原始和弦列表(会错位,连带调性上下文出错)
+    seq_items = []
     for c in chords:
-        if not seq or seq[-1] != c["label"]:
-            seq.append(c["label"])
+        if not seq_items or seq_items[-1][0] != c["label"]:
+            seq_items.append((c["label"], c["start"]))
+    seq = [s[0] for s in seq_items]
     counts = defaultdict(list)
     for n in range(args.min_ngram_len, args.max_ngram_len + 1):
         for i in range(len(seq) - n + 1):
@@ -173,8 +184,11 @@ def main():
         out.append("| 次数 | 长度 | 进行 | 罗马数字 | 首次出现 |")
         out.append("|---|---|---|---|---|")
         for gram, idxs in ranked[:args.top_ngrams]:
-            t = chords[idxs[0]]["start"] if idxs[0] < len(chords) else 0
-            k = key_at(t)
+            i0 = idxs[0]
+            t = seq_items[i0][1]
+            t_end = seq_items[i0 + len(gram)][1] if i0 + len(gram) < len(seq_items) \
+                else chords[-1]["end"]
+            k = key_over_span(t, t_end)
             out.append(f"| {len(idxs)} | {len(gram)} | {' → '.join(gram)} | "
                        f"{' → '.join(roman(k, g) for g in gram)} | "
                        f"{int(t//60)}:{t%60:04.1f} |")

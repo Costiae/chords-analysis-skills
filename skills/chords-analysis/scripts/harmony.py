@@ -87,6 +87,18 @@ def _corr(a, b):
     return float(a @ b / d) if d else 0.0
 
 
+def key_score(profile, key_str, use_flats=False):
+    """给定音级分布与调名,返回该调的 Krumhansl 相关分(0..1)。用于稳定性比较。"""
+    names = PC_FLAT if use_flats else PC_SHARP
+    vec = np.array([profile.get(p, 0.0) for p in names], dtype=float)
+    if vec.sum() <= 0:
+        return 0.0
+    vec = vec / vec.sum()
+    root, mode = key_str.split(" ", 1)
+    ref = KK_MINOR if mode == "minor" else KK_MAJOR
+    return round(_corr(vec, np.roll(ref, pc_index(root))), 3)
+
+
 def key_candidates(profile, top=4, use_flats=False):
     """音级时长分布 -> Krumhansl 调性候选。profile 的键需与拼写一致。"""
     names = PC_FLAT if use_flats else PC_SHARP
