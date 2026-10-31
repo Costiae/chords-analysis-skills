@@ -197,20 +197,68 @@ def canonical_key_name(key_str: str) -> str:
     return f"{pc_name(pc_index(root), flats)} {mode}"
 
 
+LETTERS = ["C", "D", "E", "F", "G", "A", "B"]
+LETTER_PC = [0, 2, 4, 5, 7, 9, 11]
+# 半音数 -> 音级序号(第几度,0 起);6 的减五/增四歧义按五度处理
+DEGREE_FOR_SEMIS = {0: 0, 1: 1, 2: 1, 3: 2, 4: 2, 5: 3, 6: 4, 7: 4, 8: 5, 9: 5, 10: 6, 11: 6}
+
+
+def _split_accidental(name: str):
+    letter = name[0].upper()
+    acc = 0
+    for ch in name[1:]:
+        if ch in "#♯":
+            acc += 1
+        elif ch in "b♭":
+            acc -= 1
+    return letter, acc
+
+
+def spell_interval(root_name: str, semis: int):
+    """按根音的字母/升降号拼写 root+semis 的音名(支持 #/b/##/bb)。
+
+    斜杠低音必须按**和弦音级**拼写,不能直接取音级名:
+    C#:maj 的三音是 E# 而不是 F,即使两者音级相同。
+    拼不出常规音名(需要三升/三降)时返回 None。
+    """
+    try:
+        letter, acc = _split_accidental(root_name)
+        li = LETTERS.index(letter)
+    except (IndexError, ValueError):
+        return None
+    root_pc = (LETTER_PC[li] + acc) % 12
+    deg = DEGREE_FOR_SEMIS[semis % 12]
+    tgt_li = (li + deg) % 7
+    natural = LETTER_PC[tgt_li]
+    target_pc = (root_pc + semis) % 12
+    diff = (target_pc - natural) % 12
+    if diff > 6:
+        diff -= 12
+    if abs(diff) > 2:
+        return None
+    return LETTERS[tgt_li] + ("#" * diff if diff > 0 else "b" * (-diff))
+
+
 def respell_label(label: str, use_flats: bool, bass_pc=None):
     """等音规范化:'A#:maj' -> 'Bb:maj';bass_pc 与根音不同则输出斜杠和弦。"""
     root, qual = parse_label(label)
     if root is None:
         return label
     r = pc_index(root)
-    out = f"{pc_name(r, use_flats)}:{qual}"
+    root_name = pc_name(r, use_flats)
+    out = f"{root_name}:{qual}"
     if bass_pc is not None and bass_pc != r:
-        out += f"/{pc_name(bass_pc, use_flats)}"
+        name = spell_interval(root_name, (bass_pc - r) % 12) or pc_name(bass_pc, use_flats)
+        out += f"/{name}"
     return out
 
 
 def dominant_bass_pc(bass_notes, start, end, min_overlap=0.15):
-    """在给定区间内取出现时长最长的低音音级。"""
+    """在给定区间内取出现时长最长的低音音级。
+
+    返回 (pc, 该音级时长, 全部低音时长)。第三个值用于判断"这个低音是否
+    真的占主导":密集的低音线里经过音也会成为最长音级。
+    """
     weights = {}
     for n in bass_notes:
         ov = min(n["end"], end) - max(n["start"], start)
@@ -218,6 +266,6 @@ def dominant_bass_pc(bass_notes, start, end, min_overlap=0.15):
             pc = n["midi"] % 12
             weights[pc] = weights.get(pc, 0.0) + ov
     if not weights:
-        return None, 0.0
+        return None, 0.0, 0.0
     pc = max(weights, key=weights.get)
-    return pc, weights[pc]
+    return pc, weights[pc], sum(weights.values())

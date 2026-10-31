@@ -10,6 +10,9 @@
                             [--onset-threshold 0.5] [--frame-threshold 0.3] [--min-note-ms 60]
 
 依赖: basic-pitch(缺失时整个步骤跳过,不影响其它层)
+     低音轨优先复用 01c 写出的 <name>.voices.json(其中的 bass 音符由
+     basic-pitch + 音域折返 + 单声部化得到,见 bass.py),避免二次推理,
+     并保证 MIDI 与转位分析用的是同一份音符。
 输出: out/<name>.midi(合并 MIDI)、out/<name>.transcription.json(音符事件)
 """
 import argparse, json, sys
@@ -74,6 +77,33 @@ def transcribe(path: Path, onset_thr=0.5, frame_thr=0.3, min_note_ms=60):
     return notes, midi_data
 
 
+def midi_from_notes(notes, program=33, name="bass"):
+    """音符事件 -> pretty_midi(GM 33 = Electric Bass finger)。"""
+    import pretty_midi
+    pm = pretty_midi.PrettyMIDI()
+    inst = pretty_midi.Instrument(program=program, name=name)
+    for n in notes:
+        vel = float(n.get("velocity") or 0.8)
+        inst.notes.append(pretty_midi.Note(
+            velocity=max(1, min(127, int(round(max(0.05, min(1.0, vel)) * 127)))),
+            pitch=int(n["midi"]),
+            start=float(n["start"]), end=float(n["end"])))
+    pm.instruments.append(inst)
+    return pm
+
+
+def voices_bass_notes(outdir: Path, audio: Path):
+    """读取 01c 的 voices.json 里的低音音符(不存在则返回 [])。"""
+    p = outdir / f"{audio.stem}.voices.json"
+    if not p.exists():
+        return []
+    try:
+        doc = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    return ((doc.get("bass") or {}).get("notes") or [])
+
+
 def process(audio: Path, outdir: Path, stems_wanted, onset_thr, frame_thr, min_note_ms,
             mono_stems=("vocals", "bass")):
     try:
@@ -85,17 +115,28 @@ def process(audio: Path, outdir: Path, stems_wanted, onset_thr, frame_thr, min_n
 
     stems = stems_for(audio, outdir)
     wanted = [s for s in stems_wanted if s in stems] or list(stems)
+    reuse_bass = voices_bass_notes(outdir, audio)
     all_notes, merged_midi = [], None
     per_stem = {}
     outdir.mkdir(parents=True, exist_ok=True)
 
     for stem in wanted:
         try:
-            print(f"[{audio.name}] transcribing {stem} ...", flush=True)
-            notes, midi = transcribe(stems[stem], onset_thr, frame_thr, min_note_ms)
-            raw_count = len(notes)
-            if stem in mono_stems:
-                notes = monophonize(notes)
+            if stem == "bass" and reuse_bass:
+                print(f"[{audio.name}] bass: reusing voices.json "
+                      f"({len(reuse_bass)} notes) ...", flush=True)
+                notes = [{"start": float(n["start"]), "end": float(n["end"]),
+                          "midi": int(n["midi"]),
+                          "velocity": round(float(n.get("amp") or 0.8), 3)}
+                         for n in reuse_bass]
+                midi = midi_from_notes(notes, program=33)
+                raw_count = len(notes)
+            else:
+                print(f"[{audio.name}] transcribing {stem} ...", flush=True)
+                notes, midi = transcribe(stems[stem], onset_thr, frame_thr, min_note_ms)
+                raw_count = len(notes)
+                if stem in mono_stems:
+                    notes = monophonize(notes)
             for n in notes:
                 n["stem"] = stem
             per_stem[stem] = {"notes": len(notes), "raw_notes": raw_count}

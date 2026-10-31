@@ -74,7 +74,7 @@ audio/xxx.flac
   │
   ├─ 01_extract.py             chords: BTC-170 + madmom-cnn ensemble (falls back to madmom×2)
   ├─ 01b_structure.py          segments, beats, downbeats, BPM, meter, tempo curve
-  ├─ 01c_voices.py             demucs stems → pyin melody (key evidence) + bass notes
+  ├─ 01c_voices.py             demucs stems → pyin melody (key evidence) + bass.py (event-based bass)
   ├─ 01d_quality.py            template quality refinement (skipped when BTC active)
   ├─ 01e_transcribe.py         Basic Pitch per stem → MIDI + note events
   ▼
@@ -100,7 +100,7 @@ out/xxx.map.md · xxx.midi · xxx.analysis.md
 | Sections | all-in-one functional labels | intro/verse/chorus/bridge/outro |
 | Tempo | all-in-one + beat-interval curve | BPM + meter + tempo curve |
 | Melody | demucs vocals + pyin | notes, pitch-class profile, phrase endings |
-| Bass / inversions | demucs bass + pyin | slash chords (`C:maj/E`) |
+| Bass / inversions | demucs bass + Basic Pitch (event-based) → octave fold → monophonize → sub-harmonic repair | slash chords (`C:maj/E`), `bass_share` gate |
 | Chord quality | BTC-170 → template fallback | maj7/min7/7/sus/dim/aug |
 | **Transcription** | **Basic Pitch per demucs stem** | **note events + MIDI per stem** |
 | Key / mode | chords + melody + phrase anchors + section weighting | candidates with evidence |
@@ -122,7 +122,8 @@ is approximated.
   an explicit decision, then re-run `05_eval.py` against a reference `.lab` to
   confirm the change is actually an improvement.
 - Degradation order is fixed and reported: BTC-170 → madmom ensemble → template
-  quality → maj/min; structure → beat-only; melody → bass-only; transcription → skipped.
+  quality → maj/min; structure → beat-only; melody → bass-only; bass →
+  Basic Pitch → pyin; transcription → skipped.
 
 ## Model fetching
 

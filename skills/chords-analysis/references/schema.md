@@ -47,6 +47,12 @@
   (intro/verse/chorus/bridge/outro 等),按和弦起始时间归属。
 - `chords[].bass_pc`:可选。低音 stem 在该和弦区间的主导音级(0-11),
   用于转位判定;`label` 里出现 `/X` 表示已确认的转位。
+- `chords[].bass_share`:可选。该主导低音音级占整段低音时长的比例(0..1)。
+  **`/X` 只有在 `bass_share ≥ 0.5` 时才写入 label**——密集低音线里的经过音
+  也会成为"最长音级",不加这个闸门会凭空造出大量假转位。
+- **斜杠低音的拼写规则**:按和弦音级拼写,不是直接取等音名。例如 `C#:maj/F`
+  应写作 `C#:maj/E#`(C# 大三和弦的三音是 E#)。`harmony.spell_interval()`
+  负责这一步;拼不出常规音名(需三升/三降)时才退回等音名。
 - `chords[].key_context`:可选。该和弦所处的段落局部调性(拼写依据)。
 - `bar` / `beat`:小节号与拍位(来自 01b 的下拍对齐);无结构数据时为 null。
 - `structure`(可选):`{engine, bpm, meter, downbeats, segments}`。
@@ -62,10 +68,63 @@
   `song.modulations`:全曲出现的所有调性。
 - `voices`(可选):`{melody_source, melody_notes, melody_pitch_class_profile,
   melody_phrase_endings, bass_notes, bass_inversions}`。
+  完整结构见下节的 `voices-v1`。
 - `quality`(可选):`{engine, vocabulary, upgraded, total}`。engine 为
   `template-chroma` 表示离线模板推断;若接入神经大词汇模型则为对应引擎名。
   `chords[].quality_source` / `quality_margin` 标记被升级的和弦及其证据强度。
 - `stats.chord_histogram`:按出现时长(秒)加权的和弦统计,四舍五入到 0.1s。
+
+## voices-v1 (`<name>.voices.json`)
+
+```json
+{
+  "schema": "voices-v1",
+  "stem_model": "htdemucs",
+  "melody": {
+    "source": "vocals",
+    "notes": [{"start": 1.2, "end": 1.7, "midi": 69, "name": "A4"}],
+    "pitch_class_profile": {"A": 42.1},
+    "phrase_endings": [{"time": 12.4, "name": "A", "midi": 69}],
+    "key_candidates": [{"key": "A major", "score": 0.81}]
+  },
+  "bass": {
+    "source": "bass",
+    "method": "basic-pitch",
+    "notes": [{"start": 0.5, "end": 0.68, "midi": 38, "name": "D2",
+               "amp": 0.71, "octave_fix": -12,
+               "octave_fix_reason": "subharmonic"}],
+    "raw_notes": 1544,
+    "octave_folded": 38,
+    "register_dropped": 0,
+    "subharmonic_fixes": 16,
+    "register": {"1": 63.0, "2": 133.9, "3": 32.5},
+    "chroma_agreement": 0.799,
+    "crest": 1.69
+  }
+}
+```
+
+低音层字段(bass.py):
+
+| Field | Meaning |
+|---|---|
+| `method` | `basic-pitch`(主路径)/ `pyin`(退化路径)/ `basic-pitch (cached)` |
+| `raw_notes` | 清理前的原始音符数(用于衡量清理强度) |
+| `octave_folded` | 被折回 [C1, G3] 音域的音数 |
+| `register_dropped` | 折回后仍越界、被丢弃的音数(通常是高次谐波伪音) |
+| `subharmonic_fixes` | 因 f0/2 强于 f0 而降低一个八度的音数(音级不变) |
+| `register` | 各八度累计时长(秒),用于确认低音真的在低音区 |
+| `chroma_agreement` | 音符音级分布 vs 音频 chroma 的余弦一致性(0..1),自检指标,不是精度 |
+| `crest` | 包络峰值/中位数,判断是否为拨弦型乐器 |
+
+约定:
+
+- `notes` 已单声部化(不重叠)并按 `start` 排序;这是转位判定的唯一依据。
+- `octave_fix` 记录被移动的半音数,`octave_fix_reason` 说明原因
+  (`subharmonic` 或音域折返)。音级(音高类)在 `subharmonic` 修复中不变,
+  因此不影响转位结论。
+- `chroma_agreement` 只用于**比较同一段音频上不同提取方法**的可信度,
+  不能当成 mir_eval 精度分数。低于 0.6 时应在分析报告中提示低音线索可能不可靠。
 
 ## 衍生文件
 

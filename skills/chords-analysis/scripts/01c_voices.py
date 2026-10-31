@@ -4,12 +4,15 @@
 一次 demucs 分离,两份产物:
   - melody: 人声 stem 做 pyin F0 跟踪 -> 音符序列 + 音级时长分布 + 乐句终止音
             -> 调性候选(与和弦直方图交叉验证,解决近关系调误判)
-  - bass  : 低音 stem -> 音符序列,供 02_format 推断转位(斜杠和弦)
+  - bass  : 低音 stem -> 音符序列,供 02_format 推断转位(斜杠和弦)。
+            走 bass.py:basic-pitch 事件式检测 + 音域折返 + 单声部化,
+            pyin 仅作退化路径(见 bass.py 说明)。
 
 demucs 产物缓存在 <outdir>/.stems/<name>/,重复运行不再分离。
 
 用法:
   python 01c_voices.py <audio文件或目录> [--outdir out] [--skip-melody] [--skip-bass]
+                        [--bass-method auto|basic-pitch|pyin]
 
 输出: out/<name>.voices.json
   {
@@ -22,7 +25,11 @@ demucs 产物缓存在 <outdir>/.stems/<name>/,重复运行不再分离。
       "phrase_endings": [{"time","name","midi"}],
       "key_candidates": [{"key": "A major", "score": 0.81}, ...]
     },
-    "bass": {"source": "bass", "notes": [...]}
+    "bass": {"source": "bass", "method": "basic-pitch",
+             "notes": [{"start","end","midi","name","amp"}],   // 单声部、已折回音域
+             "register": {"1": 12.4, "2": 88.1},              // 各八度时长(秒)
+             "octave_folded": 3, "register_dropped": 0,
+             "chroma_agreement": 0.87}                        // 音符分布 vs 音频 chroma
   }
 """
 import argparse, json, sys
@@ -189,20 +196,15 @@ def analyze_melody(audio: Path, stems: dict):
     }
 
 
-def analyze_bass(stems: dict):
-    import librosa
-    y, sr = librosa.load(str(stems["bass"]), sr=SR, mono=True)
-    if y.size == 0 or float(np.abs(y).max()) < 1e-4:
-        return {"source": "bass", "notes": []}
-    f0, voiced, _ = librosa.pyin(
-        y, fmin=librosa.note_to_hz("A0"), fmax=librosa.note_to_hz("C4"),
-        sr=sr, frame_length=4096)
-    times = librosa.times_like(f0, sr=sr, hop_length=512)
-    notes = f0_to_notes(f0, voiced, times, 512 / sr, min_dur=0.06)
-    return {"source": "bass", "notes": notes}
+def analyze_bass(stems: dict, bass_method="auto", cached_notes=None):
+    """低音 stem -> 音符序列(含诊断)。委托给 bass.py 的事件式流程。"""
+    import bass as B
+    doc = B.extract(stems["bass"], method=bass_method, cached_notes=cached_notes)
+    return doc
 
 
-def process(audio: Path, outdir: Path, do_melody=True, do_bass=True) -> bool:
+def process(audio: Path, outdir: Path, do_melody=True, do_bass=True,
+            bass_method="auto") -> bool:
     orig_stem = audio.stem
     work = resample_44k(audio, outdir / ".resampled")
     try:
@@ -225,9 +227,21 @@ def process(audio: Path, outdir: Path, do_melody=True, do_bass=True) -> bool:
             print(f"[{orig_stem}] melody failed: {type(e).__name__}: {e}", file=sys.stderr)
     if do_bass:
         try:
-            print(f"[{orig_stem}] bass: pyin on bass stem ...", flush=True)
-            doc["bass"] = analyze_bass(stems)
-            print(f"  bass notes={len(doc['bass']['notes'])}", flush=True)
+            print(f"[{orig_stem}] bass: {bass_method} on bass stem ...", flush=True)
+            doc["bass"] = analyze_bass(stems, bass_method=bass_method)
+            b = doc["bass"]
+            extra = ""
+            if b.get("method"):
+                extra += f" method={b['method']}"
+            if b.get("octave_folded"):
+                extra += f" octave_folded={b['octave_folded']}"
+            if b.get("register_dropped"):
+                extra += f" dropped={b['register_dropped']}"
+            if b.get("subharmonic_fixes"):
+                extra += f" subharmonic={b['subharmonic_fixes']}"
+            if b.get("chroma_agreement") is not None:
+                extra += f" chroma_agreement={b['chroma_agreement']}"
+            print(f"  bass notes={len(b['notes'])}{extra}", flush=True)
         except Exception as e:
             print(f"[{orig_stem}] bass failed: {type(e).__name__}: {e}", file=sys.stderr)
 
@@ -245,6 +259,9 @@ def main():
     ap.add_argument("--outdir", default="out")
     ap.add_argument("--skip-melody", action="store_true")
     ap.add_argument("--skip-bass", action="store_true")
+    ap.add_argument("--bass-method", default="auto",
+                    choices=["auto", "basic-pitch", "pyin"],
+                    help="低音提取方式:auto=basic-pitch 优先,失败退 pyin")
     args = ap.parse_args()
     src = Path(args.input)
     files = find_audio(src)
@@ -253,7 +270,8 @@ def main():
         sys.exit(1)
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    ok = sum(process(f, outdir, not args.skip_melody, not args.skip_bass) for f in files)
+    ok = sum(process(f, outdir, not args.skip_melody, not args.skip_bass,
+                     args.bass_method) for f in files)
     print(f"done: {ok}/{len(files)} succeeded")
     sys.exit(0 if ok == len(files) else 2)
 

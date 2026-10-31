@@ -124,7 +124,11 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
             if i >= 0:
                 bar, beat = divmod(i, 4)
                 bar, beat = bar + 1, beat + 1
-        bass_pc, _ = H.dominant_bass_pc(bass_notes, c["start"], c["end"]) if bass_notes else (None, 0)
+        if bass_notes:
+            bass_pc, bass_w, bass_tot = H.dominant_bass_pc(bass_notes, c["start"], c["end"])
+            bass_share = round(bass_w / bass_tot, 2) if bass_tot else None
+        else:
+            bass_pc, bass_share = None, None
         label = c["label"]
         qsource = None
         qmargin = None
@@ -138,7 +142,7 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
         entry = {"start": c["start"], "end": c["end"], "label": label,
                  "bar": bar, "beat": beat,
                  "section": section_at(c["start"]),
-                 "bass_pc": bass_pc}
+                 "bass_pc": bass_pc, "bass_share": bass_share}
         if qsource:
             entry["quality_source"] = qsource
             entry["quality_margin"] = qmargin
@@ -319,7 +323,10 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
         k = key_for_time(c["start"])
         f = H.is_flat_key(k) if k else use_flats
         pcs = {H.pc_index(p) for p in H.label_pitch_classes(c["label"], f)}
-        slash = c["bass_pc"] if (c["bass_pc"] is not None and c["bass_pc"] in pcs) else None
+        # 只有低音在**和弦音**上、且占到该和弦低音时长的 50% 才写成转位;
+        # 密集低音线里的经过音不应该制造斜杠和弦
+        slash = (c["bass_pc"] if (c["bass_pc"] is not None and c["bass_pc"] in pcs
+                                  and (c.get("bass_share") or 0) >= 0.5) else None)
         c["label"] = H.respell_label(c["label"], f, slash)
         c["key_context"] = k
 

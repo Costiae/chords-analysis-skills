@@ -82,14 +82,32 @@ If setup fails, report the error to the user; do not silently switch engines.
    tracking (no segment labels — then say so instead of guessing). Weights are
    fetched from HuggingFace; on blocked networks use `HF_ENDPOINT=https://hf-mirror.com`
    and pre-place the `harmonix-fold*.pth` files in `~/.cache/torch/hub/checkpoints`.
-2c. **Voices: melody + bass** (mode/key evidence and inversions):   ```
-   <PY> -W ignore <skill-dir>/scripts/01c_voices.py audio/<file> --outdir out
+2c. **Voices: melody + bass** (mode/key evidence and inversions):
    ```
-   Runs demucs once (cached in `<outdir>/.stems/`), then pyin pitch tracking on the
-   vocals stem (melody notes, pitch-class profile, phrase endings, key candidates)
-   and on the bass stem (bass notes → slash chords). Vocals are the primary key
-   evidence; if the track is instrumental the melody step fails gracefully and
-   only bass is used.
+   <PY> -W ignore <skill-dir>/scripts/01c_voices.py audio/<file> --outdir out \
+       [--bass-method auto|basic-pitch|pyin]
+   ```
+   Runs demucs once (cached in `<outdir>/.stems/`), then:
+   - **melody**: pyin pitch tracking on the vocals stem → notes, pitch-class
+     profile, phrase endings, key candidates. Primary key evidence.
+   - **bass**: `scripts/bass.py`, which is event-based (Basic Pitch), **not**
+     continuous F0 tracking. pyin on a plucked bass is systematically wrong:
+     the 2nd harmonic usually outweighs the fundamental (octave flips D2/D3)
+     and 100–180 ms notes are too short to track. The pipeline is
+     Basic Pitch → octave folding into [C1, G3] → monophonization →
+     sub-harmonic repair → chroma self-check. pyin is kept only as the
+     degradation path (`--bass-method pyin`, or when basic-pitch is missing).
+   Instrumental tracks simply skip the melody half; bass still runs.
+   Read the printed diagnostics and report them if unusual:
+   - `octave_folded` / `register_dropped` — notes moved into bass register / discarded
+   - `subharmonic` — notes lowered an octave because f0/2 dominated in both
+     the head and tail windows (harmonic misdetection, pitch class unchanged)
+   - `chroma_agreement` (0..1) — note pitch-class distribution vs. audio chroma.
+     It is a **self-check**, not an accuracy score. On a real plucked-bass stem,
+     ~0.75–0.85 is normal for Basic Pitch; pyin scores ~0.43 and must not be
+     used as the primary path.
+   Bass notes are the sole evidence for slash chords; no bass stem means no
+   inversions (never invent them).
 2d. **Chord quality (large vocabulary)** — order matters:
    - If engine `btc-170` is available (weights cached), **skip this step**: BTC
      already outputs 170-class labels and 02_format ignores the template file
@@ -107,7 +125,9 @@ If setup fails, report the error to the user; do not silently switch engines.
    ```
    Basic Pitch per demucs stem (vocals/bass/other), monophonic filtering on
    vocals/bass, per-stem MIDI + combined MIDI + note JSON. Skips cleanly when
-   basic-pitch is not installed.
+   basic-pitch is not installed. If `<name>.voices.json` already exists, the
+   bass stem is **reused** from it rather than re-inferred, so the MIDI and the
+   inversion analysis share one note list (GM program 33 = electric bass).
 
 ## Model fetching (shared, mirror-aware)
 
