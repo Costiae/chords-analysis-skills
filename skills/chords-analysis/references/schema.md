@@ -172,6 +172,51 @@
 但和弦数据无法判定,不要写成"转调"。`events` 的级数一律相对段级 key,
 不要把 `in_break` 事件的级数当成局部调的级数。
 
+## materials-v1 (`<name>.materials.md` / `.json`)
+
+`07_sections.py` 的输出:用主旋律 + 和弦给乐段编材料号,再和模型标签对照。
+
+```json
+{
+  "schema": "materials-v1", "threshold": 0.8,
+  "segments": [
+    {"index": 2, "start": 56.5, "end": 81.6, "label": "chorus", "material": "C",
+     "key": "A major",
+     "melody": {"sung": 12.4, "mean_note": "A4", "slope_per_10s": -3.2,
+                "phrases": 3, "phrase_up": 2, "phrase_down": 1,
+                "contour": [16 floats]},
+     "similar_to": null, "similarity": null,
+     "degree_profile": [12 floats],
+     "end_chord": "C:min", "end_degree": "♭III"}
+  ],
+  "materials": [{"id": "C", "members": [2, 5, 9]}],
+  "pre_chorus_candidates": [
+    {"index": 3, "start": 81.6, "end": 115.1, "duration": 33.5,
+     "end_chord": "F:7", "end_degree": "V", "material": "D",
+     "next": 115.1, "strength": "weak"}
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `material` | 材料号 A/B/C…;`-` 表示旋律不足(纯器乐/静音),不参与聚类 |
+| `melody.contour` | 16 点等时重采样、去均值归一化后的旋律轮廓——"旋律方向"的量化形式 |
+| `melody.slope_per_10s` | 线性回归走向(半音/10 秒);`sung < 6s` 时不可靠 |
+| `melody.phrase_up/down` | 乐句首尾差 ≥2 半音的上行/下行乐句数 |
+| `similarity` | 与同材料参照段的综合相似度 = 0.45×轮廓 + 0.30×音级分布 + 0.25×和弦级数 |
+| `transposition` | 相对参照段的移调(半音);**正数表示本段更高**。副歌升 key 会在这里出现 `+1` |
+| `end_degree` | 收束和弦相对段级 key 的级数,用于判断半终止/前副歌 |
+| `pre_chorus_candidates[].strength` | `strong` = 短于副歌中位数 75%;`weak` = 长度与副歌相当,更像 verse 尾段 |
+
+**解读规则**:
+- **标签 ≠ 材料**。交叉表里 `chorus` 可能对应 2–3 个材料,`outro` 可能复用 `chorus`
+  的材料;说"副歌回来了"之前先看材料号。
+- 轮廓相似度是主力:实测同一副歌 0.96–0.99,不同材料之间可以到负值;而音级分布在
+  同曲不同段普遍 0.85+,单独用没有分辨力。
+- 旋律来自 pyin,八度错误会污染轮廓。单段低分只作为线索,不要当成"不是同一材料"的证明。
+- 没有独立前副歌时报告"无",不要把一个收在 V 的满长度 verse 写成 Pre-Chorus。
+
 ## 衍生文件
 
 | File | Content |
@@ -185,6 +230,7 @@
 | `<name>.lab` | MIREX .lab time tags (Sonic Visualiser, mir_eval) |
 | `<name>.map.md` | **harmonic map**: bar grid + Roman numerals + section progressions + n-grams |
 | `<name>.localkeys.md` | **section-key audit**: coverage gaps (where the section key fails) + tonicization events with direction |
+| `<name>.materials.md` | **section materials**: melody-contour clusters, label × material matrix, pre-chorus candidates |
 | `<name>.chords.eval.json` | evaluation scores vs a reference annotation (05_eval.py) |
 | `<name>.analysis.md` | LLM analysis report |
 

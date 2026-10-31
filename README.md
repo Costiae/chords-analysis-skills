@@ -87,6 +87,7 @@ out/xxx.chords.json  ★ authoritative + xxx.lab (MIREX)
   │  scripts/04_map.py         harmonic map (bar grid, Roman numerals, n-grams)
   │  scripts/05_eval.py        mir_eval regression vs reference annotation
   │  scripts/06_local_keys.py  section-key audit: coverage gaps + tonicization directions
+  │  scripts/07_sections.py   section materials from melody contour + chords, label × material
   ▼
 out/xxx.map.md · xxx.midi · xxx.analysis.md
 ```
@@ -106,6 +107,7 @@ out/xxx.map.md · xxx.midi · xxx.analysis.md
 | **Transcription** | **Basic Pitch per demucs stem** | **note events + MIDI per stem** |
 | Key / mode | chords + melody + phrase anchors + **section-scoped** key, coverage-checked | per-section tonic, gaps where it fails |
 | Tonicization | `06_local_keys.py` (dominant → target resolutions) | direction (V/vi, V/III…), duration |
+| Section material | `07_sections.py` (transposition-invariant melody contour + chords) | material IDs, label × material matrix, pre-chorus |
 | Modulations | per-section key estimation | `song.modulations`, per-segment keys |
 | Progressions | n-gram mining | repeated progressions with Roman numerals |
 | Evaluation | mir_eval (05_eval.py) | root/majmin/triad/sevenths/mirex |

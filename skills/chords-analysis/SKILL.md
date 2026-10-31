@@ -189,6 +189,24 @@ All remote weights go through `scripts/models.py` + `models/manifest.json`:
    Writes `<name>.localkeys.md`. **Read this before writing about key**: a
    section key with low confidence or `key_source: stable` is often an average
    of two keys, and the gap table shows exactly where it breaks.
+4d. **Section materials from melody + chords** (which sections reuse the same material):
+   ```
+   <PY> -W ignore <skill-dir>/scripts/07_sections.py out/<name>.chords.json --outdir out
+   ```
+   Clusters sections on **transposition-invariant melodic contour** (0.45) +
+   pitch-class profile (0.30) + chord-degree profile (0.25), then cross-tabulates
+   the result against the model's labels. Writes `<name>.materials.md`:
+   - per-section table: material ID, model label, melodic direction
+     (regression slope + phrase up/down), cadence degree;
+   - material groups and a **label × material** matrix;
+   - cross-label reuse (e.g. an outro that reuses the chorus melody);
+   - pre-chorus candidates: section immediately before a chorus that ends on a
+     dominant function and whose material is unique. A full-length verse is
+     reported as `weak`, not as a confirmed pre-chorus.
+   Contour is what actually separates sections: in testing, pitch-class profiles
+   sat at 0.85+ even between verse and chorus, while contour reached 0.99 for
+   repeated choruses and went negative across different materials. Melody from
+   pyin can carry octave errors, so a single low score is a hint, not proof.
 5. **Analyze / answer**: read `out/<name>.chords.json` (for long songs read `stats`
    first, then read `chords` in slices as needed), then answer or write a report to
    `out/<name>.analysis.md` following the "LLM analysis conventions" in
@@ -223,6 +241,13 @@ All remote weights go through `scripts/models.py` + `models/manifest.json`:
   point, but treat `key_source: stable` as inherited, not measured — verify it
   against the coverage gaps before quoting it. `song.modulations` lists every
   distinct key found.
+- **Structure labels are functional, not material.** A `chorus` label can cover
+  several different melodies, and an `outro` can reuse the chorus material. Use
+  `07_sections.py`'s label × material matrix before saying "the chorus returns";
+  quote the material ID and the transposition if the repeat is shifted.
+- **Pre-chorus** is only a pre-chorus if it is short, ends on a dominant function
+  and has its own material. A full-length verse that happens to end on V is a
+  verse; say so.
 - **Progressions**: prefer `04_map.py` output (`<name>.map.md`) — it already has
   the bar grid, Roman numerals and mined repeated n-grams. Do not re-derive the
   map by hand from raw chords.
