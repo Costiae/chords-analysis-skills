@@ -87,7 +87,7 @@ def quality_family(label):
 
 
 def chord_pcs(label):
-    return [H.pc_index(p) for p in H.label_pitch_classes(base_label(label))]
+    return [H.pc_index(p) for p in H.core_pitch_classes(base_label(label))]
 
 
 def split_key(key_str):

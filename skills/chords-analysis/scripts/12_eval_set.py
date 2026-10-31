@@ -115,10 +115,11 @@ def load_ref(path: Path, limit):
 
 
 def load_est(path: Path, limit):
+    import harmony as H
     d = json.loads(path.read_text(encoding="utf-8"))
     iv, lab = [], []
     for c in d.get("chords") or []:
-        s, e, l = float(c["start"]), float(c["end"]), c["label"]
+        s, e, l = float(c["start"]), float(c["end"]), H.to_harte(c["label"])
         if limit:
             if s >= limit:
                 break

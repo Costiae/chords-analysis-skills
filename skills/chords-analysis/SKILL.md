@@ -288,7 +288,7 @@ All remote weights go through `scripts/models.py` + `models/manifest.json`:
    mir_eval (root/majmin/mirex/sevenths/triads). Audio is synthesized, so the
    numbers are a **regression baseline**: compare the same table before/after a
    change. Current baseline (3 songs × 90 s, madmom ensemble):
-   `root 0.919 / majmin 0.920 / mirex 0.907 (basic) / 0.905 (extended) / 0.886 (raw)`.
+   `root 0.919 / majmin 0.920 / mirex 0.907 (basic = extended) / 0.886 (raw)`.
    `05_eval.py` remains self-consistency only — never quote its 1.0000 as accuracy.
 
 ## Analysis requirements

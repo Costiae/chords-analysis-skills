@@ -134,7 +134,7 @@ ensemble:
 |---|---|---|---|---|
 | none | 0.919 | 0.920 | 0.886 | 0.880 |
 | basic (14 classes) | 0.919 | 0.920 | **0.907** | 0.877 |
-| extended (36 classes) | 0.919 | 0.920 | 0.905 | 0.873 |
+| extended (36 classes) | 0.919 | 0.920 | **0.907** | 0.871 |
 
 Audio is synthesized, so these are **relative** numbers: compare the same table
 before and after a change. The harness also caught a design mistake — letting

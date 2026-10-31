@@ -75,8 +75,17 @@ ALLOWED_FROM = {
     "min7": ["min7", "min9", "min11", "min13"],
     "7": ["7", "9", "11", "13", "7b9", "7#9", "7#11", "7b13",
           "7b5", "7#5", "aug7", "7sus4"],
+    "aug": ["aug", "maj7#5", "7#5"],
     "6": ["6"],
 }
+
+# 扩展和弦不与"第二候选"比,而与**基础和弦**比:13 与 9 的模板彼此接近,
+# 用 best-vs-second 会把两个都判成"证据不足"。
+EXT_GAIN = {q: 0.03 for q in EXTENDED_WEIGHTS}
+# 三和弦直接跳到 9/11/13 需要更强证据(七音 + 延伸音都要在)
+TRIAD_EXT_GAIN = 0.10
+# 延伸音之间(13/11/9)的最小分差;分不开就退回七和弦,不掷骰子
+EXT_MARGIN = 0.02
 
 # 音数越多越可疑(chroma 谐波泄漏常伪造 9/11 音);复杂度惩罚
 # 升级阈值按性质分级:越"花"的性质要求证据越强
@@ -158,11 +167,12 @@ def validate_quality(chroma_vec, root_idx, quality):
     if quality == "maj9":
         return e(2) > 0.30 * root_e and e(11) > 0.38 * root_e
     if quality in ("11", "min11"):
-        return e(2) > 0.25 * root_e and e(5) > 0.28 * root_e and e(10) > 0.38 * root_e
+        return e(5) > 0.25 * root_e and e(10) > 0.35 * root_e
     if quality in ("13", "min13"):
-        return e(2) > 0.25 * root_e and e(9) > 0.28 * root_e and e(10) > 0.38 * root_e
+        # 13 和弦常省略 9 音(爵士 voicing),只要求 13 音与七音
+        return e(9) > 0.24 * root_e and e(10) > 0.35 * root_e
     if quality == "maj13":
-        return e(2) > 0.25 * root_e and e(9) > 0.28 * root_e and e(11) > 0.38 * root_e
+        return e(9) > 0.24 * root_e and e(11) > 0.35 * root_e
     if quality == "7b9":
         return e(1) > 0.32 * root_e
     if quality == "7#9":
@@ -233,11 +243,31 @@ def analyze(audio: Path, raw_doc: dict, min_dur=0.35, vocabulary="basic"):
         best_q, best_s = ranked[0]
         second_s = ranked[1][1] if len(ranked) > 1 else 0.0
         margin = best_s - second_s
-        # 保守策略:margin 不足或物理校验不通过,就保留 madmom 的三和弦判断
+        base_s = scores.get(qual0, 0.0)
+        gain = best_s - base_s
+        # 保守策略:margin/增益不足或物理校验不通过,就保留输入的性质
         keep = qual0
-        need = UPGRADE_MARGIN.get(best_q, 0.05)
-        if margin >= need and validate_quality(vec, root_idx, best_q):
-            keep = best_q
+        if extended and best_q in EXTENDED_WEIGHTS:
+            # 已经带七音的基础:小幅增益即可;三和弦直接跳延伸音:要求强证据
+            base7 = qual0 in ("maj7", "min7", "7", "6", "min6", "hdim7", "dim7")
+            need = EXT_GAIN.get(best_q, 0.03) if base7 else TRIAD_EXT_GAIN
+            # 延伸音之间(13 vs 11 vs 9)也要分得开,否则退回七和弦
+            ok = gain >= need and margin >= EXT_MARGIN
+            if ok and validate_quality(vec, root_idx, best_q):
+                keep = best_q
+            else:
+                # 回退:在基础候选里选最好的(通常就是七和弦)
+                basic_ranked = [(q, s) for q, s in ranked if q in QUALITY_WEIGHTS]
+                if basic_ranked:
+                    bq, bs = basic_ranked[0]
+                    b_second = basic_ranked[1][1] if len(basic_ranked) > 1 else 0.0
+                    if (bs - b_second >= UPGRADE_MARGIN.get(bq, 0.05)
+                            and validate_quality(vec, root_idx, bq)):
+                        keep = bq
+        else:
+            need = UPGRADE_MARGIN.get(best_q, 0.05)
+            if margin >= need and validate_quality(vec, root_idx, best_q):
+                keep = best_q
         out.append({
             "start": c["start"], "end": c["end"],
             "root": root,
@@ -245,6 +275,7 @@ def analyze(audio: Path, raw_doc: dict, min_dur=0.35, vocabulary="basic"):
             "madmom_quality": qual0,
             "confidence": round(best_s, 3),
             "margin": round(margin, 3),
+            "gain": round(gain, 3),
             "template_scores": {q: round(s, 3) for q, s in ranked[:4]},
         })
     return out
@@ -283,7 +314,7 @@ def main():
           f"({len(changed)/max(1,len(chords)):.0%}) -> {dest}")
     for c in changed[:8]:
         print(f"  {c['start']:6.1f}s {c['root']}:{c['madmom_quality']} -> "
-              f"{c['root']}:{c['quality']}  (margin {c['margin']})")
+              f"{c['root']}:{c['quality']}  (gain {c.get('gain')}, margin {c['margin']})")
 
 
 if __name__ == "__main__":

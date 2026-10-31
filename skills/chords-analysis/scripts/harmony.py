@@ -94,11 +94,41 @@ def label_pitch_classes(label: str, use_flats=False):
     return [pc_name((r + i) % 12, use_flats) for i in intervals]
 
 
+# 调性推断只用"骨架音"(根/三/五/七),不用 9/11/13 与变化五音。
+# 否则扩展语汇会把调性带偏:同一段和弦加了 13 音后,局部 key 可能整体改变。
+CORE_INTERVALS = {
+    "maj": [0, 4, 7], "min": [0, 3, 7], "dim": [0, 3, 6], "aug": [0, 4, 8],
+    "maj7": [0, 4, 7, 11], "min7": [0, 3, 7, 10], "7": [0, 4, 7, 10],
+    "hdim7": [0, 3, 6, 10], "dim7": [0, 3, 6, 9],
+    "sus2": [0, 2, 7], "sus4": [0, 5, 7], "6": [0, 4, 7, 9],
+    "min6": [0, 3, 7, 9], "maj6": [0, 4, 7, 9], "minmaj7": [0, 3, 7, 11],
+    "9": [0, 4, 7, 10], "maj9": [0, 4, 7, 11], "min9": [0, 3, 7, 10],
+    "11": [0, 4, 7, 10], "min11": [0, 3, 7, 10],
+    "13": [0, 4, 7, 10], "maj13": [0, 4, 7, 11], "min13": [0, 3, 7, 10],
+    "7b9": [0, 4, 7, 10], "7#9": [0, 4, 7, 10], "7#11": [0, 4, 7, 10],
+    "7b13": [0, 4, 7, 10], "7b5": [0, 4, 7, 10], "7#5": [0, 4, 7, 10],
+    "aug7": [0, 4, 8, 10], "maj7#11": [0, 4, 7, 11], "maj7#5": [0, 4, 7, 11],
+    "add9": [0, 4, 7], "madd9": [0, 3, 7], "6/9": [0, 4, 7, 9],
+    "7sus4": [0, 5, 7, 10],
+}
+
+
+def core_pitch_classes(label: str, use_flats=False):
+    """和弦的骨架音(调性推断用):忽略 9/11/13 与变化五音。"""
+    root, qual = parse_label(label)
+    if root is None:
+        return []
+    qual = canonical_quality(qual)
+    intervals = CORE_INTERVALS.get(qual, [0, 4, 7])
+    r = pc_index(root)
+    return [pc_name((r + i) % 12, use_flats) for i in intervals]
+
+
 def chord_profile(hist, use_flats=False):
-    """和弦时长直方图 -> 音级权重(每个和弦音按 1/音数 分摊)。用于调性推断。"""
+    """和弦时长直方图 -> 音级权重(每个骨架音按 1/音数 分摊)。用于调性推断。"""
     prof = {pc_name(i, use_flats): 0.0 for i in range(12)}
     for label, dur in hist.items():
-        pcs = label_pitch_classes(label, use_flats)
+        pcs = core_pitch_classes(label, use_flats)
         if not pcs:
             continue
         w = float(dur) / len(pcs)
@@ -177,7 +207,7 @@ def diatonic_coverage(chords, key_str):
             dur = 1.0
         if not label or label == "N" or dur <= 0:
             continue
-        tones = label_pitch_classes(label)
+        tones = core_pitch_classes(label)
         if not tones:
             continue
         hit = sum(1 for t in tones if pc_index(t) in pcs) / len(tones)
@@ -264,6 +294,32 @@ def spell_interval(root_name: str, semis: int):
     if abs(diff) > 2:
         return None
     return LETTERS[tgt_li] + ("#" * diff if diff > 0 else "b" * (-diff))
+
+
+# Harte/MIREX 语法不接受 7b9/6-9 这类写法,导出 .lab 与 mir_eval 前要转
+HARTE_QUALITY = {
+    "7b9": "7(b9)", "7#9": "7(#9)", "7#11": "7(#11)", "7b13": "7(b13)",
+    "7b5": "7(b5)", "7#5": "7(#5)",
+    "maj7#11": "maj7(#11)", "maj7#5": "maj7(#5)",
+    "aug7": "7(#5)", "7sus4": "sus4",
+    "add9": "maj", "madd9": "min", "6/9": "6",
+}
+
+
+def to_harte(label: str):
+    """内部标签 -> Harte/MIREX 可解析写法。无法表达的延伸音降级到基础性质。"""
+    if not label or label == "N":
+        return label or "N"
+    body, bass = split_slash(label)
+    root, qual = parse_label(body)
+    if root is None:
+        return label
+    qual = canonical_quality(qual)
+    q = HARTE_QUALITY.get(qual, qual)
+    out = f"{root}:{q}"
+    if bass:
+        out += f"/{bass}"
+    return out
 
 
 def respell_label(label: str, use_flats: bool, bass_pc=None):

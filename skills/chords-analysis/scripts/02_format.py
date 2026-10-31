@@ -411,7 +411,7 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
 
     # MIREX .lab(等音规范化后的标签)
     lab = outdir / f"{stem}.lab"
-    lab.write_text("\n".join(f"{c['start']:.3f}\t{c['end']:.3f}\t{c['label']}"
+    lab.write_text("\n".join(f"{c['start']:.3f}\t{c['end']:.3f}\t{H.to_harte(c['label'])}"
                              for c in out_chords), encoding="utf-8")
 
     # 控制台摘要

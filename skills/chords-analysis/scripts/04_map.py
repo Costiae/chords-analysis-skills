@@ -19,7 +19,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 import harmony as H
 
 ROMAN = ["I", "bII", "II", "bIII", "III", "IV", "bV", "V", "bVI", "VI", "bVII", "VII"]
-ROMAN_MINOR = ["I", "bII", "II", "III", "#IV", "IV", "V", "bVI", "VI", "bVII", "VII", "bVII"]
+# 小调:自然三音在 3,导音在 11;7 必须是 V(旧表从 6 开始整体错位一格)
+ROMAN_MINOR = ["I", "bII", "II", "III", "#III", "IV", "#IV", "V",
+               "bVI", "VI", "bVII", "VII"]
 
 
 def roman(numeral_key: str, label: str) -> str:
