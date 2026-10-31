@@ -227,7 +227,17 @@
 | `<name>.lead.musicxml` | 主旋律 + 和弦符号 + 段落排练号 + 调性变化(功能谱) |
 | `<name>.score.musicxml` | 主旋律 + 低音 + **由和弦符号生成**的和声声部 |
 | `<name>.score.mid` | 带 tempo map / 拍号的 MIDI(可导入 DAW) |
-| `<name>.score.json` | `{bars, meter, quantization, parts, files}` |
+| `<name>.score.json` | `{bars, meter, quantization, parts, checks, files}` |
+
+`checks` 是谱面自检,不是精度指标:
+
+| Field | Meaning |
+|---|---|
+| `grid_start_sec` | 网格第一个下拍;之前的音频不记谱 |
+| `melody_used / dropped` | 进入谱面的旋律音数 / 被量化或重叠合并掉的音数 |
+| `melody_octave_fixed` | 被八度连续性修正的音数(review 页标红) |
+| `bass_octave_fixed` | 低音层不做连续性修正(已在 bass.py 做过谐波复核),正常应为 0 |
+| `measures_uniform` | 所有小节是否等长;false 表示导出后可能错位,应视为失败 |
 
 约定:
 
@@ -241,9 +251,9 @@
 
 ## 人工核对页（`<name>.review.html`）
 
-单文件 HTML/SVG,无依赖。四层并排:段落带(标签·材料·调)、和弦轨(冲突橙色)、
-旋律 piano-roll(八度修正红色)、低音 roll;下方是乐段表。用于人工抽查,也是
-"AI 错了人还能看"的兜底。
+单文件 HTML/SVG,无依赖。五层并排:段落带(标签·材料·调)、鼓 onset(参考,非音符)、
+和弦轨(冲突橙色)、旋律 piano-roll(八度修正红色)、低音 roll;下方是乐段表。
+用于人工抽查,也是"AI 错了人还能看"的兜底。
 
 ## 衍生文件
 
@@ -261,7 +271,8 @@
 | `<name>.materials.md` | **section materials**: melody-contour clusters, label × material matrix, pre-chorus candidates |
 | `<name>.lead.musicxml` / `.score.musicxml` | lead sheet / three-part skeleton (melody + bass + generated harmony) |
 | `<name>.score.mid` | tempo-mapped MIDI (bar-aligned, importable into a DAW) |
-| `<name>.review.html` | **human review page**: sections + chords + melody + bass on one timeline |
+| `<name>.review.html` | **human review page**: sections + chords + melody + bass (+ drum onsets) on one timeline |
+| `index.html` | **bundle**: per-track cards, score checks and links to every artifact |
 | `<name>.chords.eval.json` | evaluation scores vs a reference annotation (05_eval.py) |
 | `<name>.analysis.md` | LLM analysis report |
 

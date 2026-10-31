@@ -229,6 +229,14 @@ All remote weights go through `scripts/models.py` + `models/manifest.json`:
    (engine conflicts in orange), melody piano roll (octave-corrected notes in red),
    bass roll, bar grid and a section table. Self-contained — open it in any
    browser. Audit against this page before asserting anything about a passage.
+4g. **Bundle** (one entry point for humans and agents):
+   ```
+   <PY> -W ignore <skill-dir>/scripts/10_bundle.py --outdir out
+   ```
+   Writes `out/index.html`: per-track cards with duration, key-by-section,
+   chord/inversion/section/material counts, score checks, and links grouped into
+   "open/play", "analysis", "data". It only reads existing JSON — no recompute,
+   so it cannot change any accuracy number. Give this path to a human first.
 5. **Analyze / answer**: read `out/<name>.chords.json` (for long songs read `stats`
    first, then read `chords` in slices as needed), then answer or write a report to
    `out/<name>.analysis.md` following the "LLM analysis conventions" in

@@ -24,6 +24,8 @@ import json
 import sys
 from pathlib import Path
 
+import numpy as np
+
 PX_PER_SEC = 8.0
 MARGIN_L = 130
 MARGIN_R = 20
@@ -57,7 +59,40 @@ def fold_into(midi, lo, hi):
     return midi
 
 
-def build_html(chords_doc, voices, materials, struct, px):
+def drum_onsets(path):
+    """鼓 stem -> onset 列表 [(time, 'low'|'high'|'mid')]。
+
+    只做**参考显示**,不写成音符:onset 检测能告诉你"这里有没有打",但
+    分不出 kick/snare/hihat 的准确音色。低频/高频只是频带能量的相对判断。
+    """
+    try:
+        import librosa
+        y, sr = librosa.load(str(path), sr=22050, mono=True)
+        if y.size == 0:
+            return []
+        env = librosa.onset.onset_strength(y=y, sr=sr)
+        times = librosa.onset.onset_detect(onset_envelope=env, sr=sr, units="time")
+        if len(times) == 0:
+            return []
+        hop = 256
+        S = np.abs(librosa.stft(y, n_fft=1024, hop_length=hop))
+        freqs = librosa.fft_frequencies(sr=sr, n_fft=1024)
+        lo = freqs < 150
+        hi = freqs > 2500
+        out = []
+        for t in times:
+            col = min(max(int(t * sr / hop), 0), S.shape[1] - 1)
+            e = S[:, col] ** 2
+            low_e = float(e[lo].sum())
+            hi_e = float(e[hi].sum())
+            kind = "low" if low_e > hi_e * 1.5 else ("high" if hi_e > low_e * 1.5 else "mid")
+            out.append((round(float(t), 3), kind))
+        return out
+    except Exception:
+        return []
+
+
+def build_html(chords_doc, voices, materials, struct, px, drums=None):
     song = chords_doc.get("song") or {}
     chords = chords_doc.get("chords") or []
     segs = (chords_doc.get("structure") or {}).get("segments") or []
@@ -78,7 +113,9 @@ def build_html(chords_doc, voices, materials, struct, px):
     # 布局
     y_sec = PAD
     h_sec = 34
-    y_chord = y_sec + h_sec + 10
+    y_drum = y_sec + h_sec + 8
+    h_drum = 24
+    y_chord = y_drum + h_drum + 8
     h_chord = 44
     y_mel = y_chord + h_chord + 12
     h_mel = 150
@@ -114,6 +151,19 @@ def build_html(chords_doc, voices, materials, struct, px):
         if (b - a) * px > 60 and k:
             add(f'<text x="{x(a)+4:.1f}" y="{y_sec+28}" fill="#607d8b">{esc(k)}</text>')
         add(f'<title>{esc(label)} {a:.1f}-{b:.1f}s {esc(k)}</title>')
+
+    # 鼓 onset 参考轨
+    add(f'<text x="8" y="{y_drum+11}" fill="#546e7a">鼓 onset</text>')
+    add(f'<text x="8" y="{y_drum+22}" fill="#90a4ae">参考 · 非音符</text>')
+    add(f'<rect x="{x0}" y="{y_drum}" width="{x(duration)-x0:.1f}" height="{h_drum}" '
+        f'fill="#fafafa" stroke="#eeeeee"/>')
+    for t, kind in (drums or []):
+        if t > duration:
+            continue
+        color = {"low": "#6d4c41", "high": "#ef6c00", "mid": "#a1887f"}[kind]
+        add(f'<line x1="{x(t):.1f}" y1="{y_drum+3}" x2="{x(t):.1f}" y2="{y_drum+h_drum-3}" '
+            f'stroke="{color}" stroke-width="2"/>')
+        add(f'<title>drum onset {t:.2f}s ({kind})</title>')
 
     # 和弦轨
     add(f'<text x="8" y="{y_chord+16}" fill="#546e7a">和弦</text>')
@@ -215,7 +265,8 @@ def build_html(chords_doc, voices, materials, struct, px):
 <h1>{esc(song.get('title',''))} · 人工核对页</h1>
 <div class="meta">
  识别层：和弦 {len([c for c in chords if c['label']!='N'])} 个（冲突标橙）·
- 旋律 {len(melody)} 音 · 低音 {len(bass)} 音 · 横轴 {px:.0f}px/秒
+ 旋律 {len(melody)} 音 · 低音 {len(bass)} 音 · 鼓 onset {len(drums or [])} 个（仅参考）·
+ 横轴 {px:.0f}px/秒
 </div>
 <div class="legend">
  <span><i class="sw" style="background:#e1f5fe;border:1px solid #b3e5fc"></i>和弦</span>
@@ -223,6 +274,8 @@ def build_html(chords_doc, voices, materials, struct, px):
  <span><i class="sw" style="background:#1565c0"></i>旋律</span>
  <span><i class="sw" style="background:#c62828"></i>八度修正</span>
  <span><i class="sw" style="background:#2e7d32"></i>低音</span>
+ <span><i class="sw" style="background:#6d4c41"></i>鼓 onset 低频</span>
+ <span><i class="sw" style="background:#ef6c00"></i>鼓 onset 高频</span>
 </div>
 <div class="wrap">{svg}</div>
 <table>
@@ -250,6 +303,7 @@ def main():
     ap.add_argument("--struct", default=None)
     ap.add_argument("--outdir", default="out")
     ap.add_argument("--px", type=float, default=PX_PER_SEC, help="pixels per second")
+    ap.add_argument("--drums", default=None, help="demucs drums stem (auto-detected if omitted)")
     args = ap.parse_args()
 
     src = Path(args.chords)
@@ -272,7 +326,16 @@ def main():
     outdir.mkdir(parents=True, exist_ok=True)
     name = src.name.replace(".chords.json", "")
 
-    page = build_html(doc, voices, mats, struct, args.px)
+    drums_path = Path(args.drums) if args.drums else None
+    if drums_path is None:
+        for cand in (outdir / ".stems" / f"{name}.44k" / "drums.wav",
+                     outdir / ".stems" / name / "drums.wav"):
+            if cand.exists():
+                drums_path = cand
+                break
+    drums = drum_onsets(drums_path) if drums_path else []
+
+    page = build_html(doc, voices, mats, struct, args.px, drums=drums)
     out = outdir / f"{name}.review.html"
     out.write_text(page, encoding="utf-8")
     print(f"[{name}] -> {out}")

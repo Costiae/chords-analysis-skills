@@ -31,7 +31,7 @@ from pathlib import Path
 
 QUANT = 4                 # 每个四分音符的格数:4 = 十六分音符
 MELODY_RANGE = (48, 84)   # C3..C6,人声/主旋律的合理音域
-BASS_RANGE = (28, 55)     # E1..G3
+BASS_RANGE = (23, 60)     # B0..C4(五弦贝斯低 B 也保留)
 HARMONY_RANGE = (48, 72)  # 生成和声的排列音域(C3..C5)
 
 QUALITY_TO_M21 = {
@@ -136,7 +136,7 @@ def fold_into(midi, lo, hi):
     return midi
 
 
-def clean_notes(notes, lo, hi, grid, mono=True):
+def clean_notes(notes, lo, hi, grid, mono=True, continuity=True):
     """音域折返 + 八度连续性修正 + 单声部化 + 量化。"""
     items = []
     for n in notes:
@@ -145,15 +145,17 @@ def clean_notes(notes, lo, hi, grid, mono=True):
                       "midi": m, "orig": int(n["midi"])})
     items.sort(key=lambda n: (n["start"], -n["midi"]))
 
-    # 八度连续性:相邻音跳超过一个八度时,尝试把当前音移 ±12 靠近前一个
-    prev = None
-    for n in items:
-        if prev is not None and abs(n["midi"] - prev) > 12:
-            for cand in (n["midi"] - 12, n["midi"] + 12):
-                if lo <= cand <= hi and abs(cand - prev) < abs(n["midi"] - prev):
-                    n["midi"] = cand
-                    break
-        prev = n["midi"]
+    # 八度连续性:相邻音跳超过一个八度时,尝试把当前音移 ±12 靠近前一个。
+    # 低音层已经在 bass.py 里做过谐波复核,这里关闭,避免把真实的低音跳进改错。
+    if continuity:
+        prev = None
+        for n in items:
+            if prev is not None and abs(n["midi"] - prev) > 12:
+                for cand in (n["midi"] - 12, n["midi"] + 12):
+                    if lo <= cand <= hi and abs(cand - prev) < abs(n["midi"] - prev):
+                        n["midi"] = cand
+                        break
+            prev = n["midi"]
 
     # 单声部化(旋律/低音都是单声部):重叠处截断前一个音
     if mono:
@@ -226,7 +228,7 @@ def chord_pitches(label, lo, hi):
 
 # ---------------------------------------------------------------- 写谱
 
-def build_score(doc, voices, materials, struct=None, with_harmony=True):
+def build_score(doc, voices, materials, struct=None, with_harmony=True, stats=None):
     from music21 import (stream, note, chord, meter, key, tempo, harmony,
                          clef, tie, pitch, expressions)
     RehearsalMark = expressions.RehearsalMark
@@ -250,7 +252,22 @@ def build_score(doc, voices, materials, struct=None, with_harmony=True):
     melody_notes = ((voices.get("melody") or {}).get("notes") or [])
     bass_notes = ((voices.get("bass") or {}).get("notes") or [])
     melody = clean_notes(melody_notes, *MELODY_RANGE, grid)
-    bass = clean_notes(bass_notes, *BASS_RANGE, grid)
+    bass = clean_notes(bass_notes, *BASS_RANGE, grid, continuity=False)
+
+    if stats is not None:
+        stats.update({
+            "bars": grid.bars,
+            "grid_start_sec": round(grid.start, 3),
+            "melody_input": len(melody_notes),
+            "melody_used": len(melody),
+            "melody_dropped": len(melody_notes) - len(melody),
+            "melody_octave_fixed": sum(1 for n in melody if n["midi"] != n["orig"]),
+            "bass_input": len(bass_notes),
+            "bass_used": len(bass),
+            "bass_dropped": len(bass_notes) - len(bass),
+            "bass_octave_fixed": sum(1 for n in bass if n["midi"] != n["orig"]),
+            "chords_notated": len(chords),
+        })
 
     score = stream.Score()
     score.metadata = None
@@ -465,8 +482,10 @@ def main():
         sys.exit(2)
 
     try:
+        score_stats = {}
         score = build_score(doc, voices, mats, struct=merged,
-                            with_harmony=not args.no_harmony_part)
+                            with_harmony=not args.no_harmony_part,
+                            stats=score_stats)
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -497,12 +516,22 @@ def main():
     st = merged
     grid = Grid(st.get("downbeats") or [], st.get("meter") or 4,
                 max(c["end"] for c in doc["chords"]), bpm=st.get("bpm"))
+    # 谱面自检:所有小节必须等长,否则导出后节拍会错位
+    lengths = []
+    for p in score.parts:
+        for m in p.getElementsByClass("Measure"):
+            lengths.append(round(m.highestTime, 4))
+    if lengths:
+        score_stats["measure_len_min"] = min(lengths)
+        score_stats["measure_len_max"] = max(lengths)
+        score_stats["measures_uniform"] = (max(lengths) - min(lengths)) < 1e-6
     summary = {
         "schema": "score-v1",
         "bars": grid.bars,
         "meter": st.get("meter"),
         "quantization": f"1/{QUANT * 4} note ({QUANT}/quarter)",
         "parts": [p.partName for p in score.parts],
+        "checks": score_stats,
         "files": [str(lead_path), str(full_path), str(mid_path)],
     }
     (outdir / f"{name}.score.json").write_text(

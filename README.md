@@ -89,9 +89,10 @@ out/xxx.chords.json  ★ authoritative + xxx.lab (MIREX)
   │  scripts/06_local_keys.py  section-key audit: coverage gaps + tonicization directions
   │  scripts/07_sections.py   section materials from melody contour + chords, label × material
   │  scripts/08_score.py      MusicXML (lead sheet + 3-part) + tempo-mapped MIDI
-  │  scripts/09_review.py     self-contained HTML review page (piano roll + chords + sections)
+  │  scripts/09_review.py     self-contained HTML review page (piano roll + chords + sections + drum onsets)
+  │  scripts/10_bundle.py     out/index.html — one entry point linking every artifact
   ▼
-out/xxx.map.md · xxx.lead.musicxml · xxx.score.midi · xxx.review.html · xxx.analysis.md
+out/index.html · xxx.map.md · xxx.lead.musicxml · xxx.score.mid · xxx.review.html · xxx.analysis.md
 ```
 
 ## What a complete analysis covers

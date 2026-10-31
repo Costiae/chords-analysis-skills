@@ -17,6 +17,7 @@
   07_sections     乐段材料(旋律轮廓)+ 标签对照
   08_score        功能谱/总谱 MusicXML + 带速度表的 MIDI
   09_review       人工核对页(HTML)
+  10_bundle       汇总入口页(out/index.html)
 """
 import argparse, json, subprocess, sys
 from pathlib import Path
@@ -141,6 +142,10 @@ def main():
                 "--outdir", args.outdir])
 
         summary.append((audio.name, engine, layers))
+
+    if "bundle" not in skip:
+        run("10_bundle (index)", [str(SCRIPTS / "10_bundle.py"),
+                                  "--outdir", args.outdir])
 
     print("\n================ PIPELINE SUMMARY ================")
     for name, engine, layers in summary:
