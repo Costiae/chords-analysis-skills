@@ -243,8 +243,11 @@ All remote weights go through `scripts/models.py` + `models/manifest.json`:
    separate from the staff lines. Each note is engraved with the key signature
    of **its own section** (not the global key), and the signature glyphs are
    drawn at every key change; the section band shows label/material plus the
-   key/mode and a coloured strip per key. Horizontal spacing carries timing.
-   This is a readable pitch/timing map, not an engraving.
+   key/mode and a coloured strip per key. Intra-section modulations found by
+   `06_local_keys.py` are used when available, so a section that starts in one
+   key and ends in another reads "Bb major → A major".
+   Horizontal spacing carries timing. This is a readable pitch/timing map, not
+   an engraving.
 4h. **Bundle** (one entry point for humans and agents):
    ```
    <PY> -W ignore <skill-dir>/scripts/10_bundle.py --outdir out

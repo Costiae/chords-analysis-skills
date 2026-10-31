@@ -11,6 +11,9 @@ review 页是"横向总览 + 人工核对";这一页是**跟随播放的谱面**
 没有用 MusicXML 渲染库(需要联网/CDN,且排版引擎对量化错误很敏感),
 而是**直接用 chords.json / voices.json 里的音符画简化五线谱**:
   - 五线谱线、小节线、拍点、变音记号、符干、加线
+  - **按段落调号**:每个音用"它所在乐段"的调号拼写;段内换调(由 06_local_keys
+    的可靠缺口给出)也会切开,调号符号画在每次换调处;只有调外音才单独标升降号
+  - **段落带第二行是调式**,段内换调显示为 "Bb major → A major",左侧色条按调区分
   - **只画散点**:音高 + 出现时刻;不画符干/符尾/时值线——转写出的音符长度
     不足以判定时值,画出来等于假装知道节奏。横向间距本身就是节奏。
   - **白色描边**,把点从谱线里分离出来
@@ -188,7 +191,7 @@ def ensure_preview(src: Path, outdir: Path, name: str):
         return None
 
 
-def build_page(doc, voices, materials, struct, audio_rel, px):
+def build_page(doc, voices, materials, struct, audio_rel, px, localkeys=None):
     song = doc.get("song") or {}
     chords = [c for c in (doc.get("chords") or []) if c["label"] != "N"]
     segs = (doc.get("structure") or {}).get("segments") or []
@@ -206,13 +209,38 @@ def build_page(doc, voices, materials, struct, audio_rel, px):
     bass = ((voices.get("bass") or {}).get("notes") or [])
     mat = {round(s["start"], 2): s for s in (materials or {}).get("segments") or []}
 
-    # 段落调性 -> 每个音符用"它所在段落"的调号,而不是全曲调号
-    key_regions = sorted(
-        [(float(s["start"]), s.get("key")) for s in segs if s.get("key")],
-        key=lambda kv: kv[0])
+    # 段落调性 -> 每个音符用"它所在段落"的调号,而不是全曲调号。
+    # 段内换调(06_local_keys 检出的可靠缺口)也插进来,否则整段都会按段级 key 拼写。
+    key_regions = []
+    for s in segs:
+        if s.get("key"):
+            key_regions.append((float(s["start"]), s.get("key"), "section"))
+
+    def section_at(t):
+        for s in segs:
+            if float(s["start"]) <= t < float(s["end"]):
+                return s
+        return None
+
+    intra = {}          # 段起点 -> [(pivot, alt_key)]
+    for br in (localkeys or {}).get("breaks") or []:
+        if br.get("relation") != "departure" or not br.get("alt_reliable"):
+            continue
+        pivot = float(br.get("worst_start") or br["start"])
+        alt = br.get("alt_key")
+        sec = section_at(pivot)
+        if not sec or not alt:
+            continue
+        key_regions.append((pivot, alt, "intra"))
+        intra.setdefault(round(float(sec["start"]), 2), []).append((pivot, alt))
+        # 缺口在段结束前就结束时,恢复段级 key
+        if float(br["end"]) < float(sec["end"]) - 0.5 and sec.get("key"):
+            key_regions.append((float(br["end"]), sec["key"], "restore"))
+    key_regions.sort(key=lambda kv: kv[0])
+
     key_order = []
-    for _, k in key_regions:
-        if k not in key_order:
+    for _, k, _ in key_regions:
+        if k and k not in key_order:
             key_order.append(k)
     sig_cache = {}
 
@@ -223,7 +251,7 @@ def build_page(doc, voices, materials, struct, audio_rel, px):
 
     def key_at(t):
         cur = song.get("key") or "C major"
-        for start, ks in key_regions:
+        for start, ks, _ in key_regions:
             if start <= t + 1e-6:
                 cur = ks
             else:
@@ -261,8 +289,9 @@ def build_page(doc, voices, materials, struct, audio_rel, px):
             add(f'<text x="{x(a)+8:.1f}" y="15" fill="#37474f" font-weight="600">'
                 f'{esc(label)}{" · " + esc(m) if m else ""}</text>')
             if ks:
-                add(f'<text x="{x(a)+8:.1f}" y="30" fill="#546e7a">'
-                    f'{esc(ks)}</text>')
+                alt = intra.get(round(a, 2), [])
+                key_txt = esc(ks) + (" → " + esc(alt[0][1]) if alt else "")
+                add(f'<text x="{x(a)+8:.1f}" y="30" fill="#546e7a">{key_txt}</text>')
         add(f'<title>{esc(label)} {a:.1f}-{b:.1f}s {esc(ks or "")}</title>')
 
     # 小节线 / 拍点
@@ -291,7 +320,7 @@ def build_page(doc, voices, materials, struct, audio_rel, px):
                 "bass": [47, 52, 45, 50, 43, 48, 41]}
     key_changes = []
     prev = None
-    for start, k in key_regions:
+    for start, k, _ in key_regions:
         if k != prev:
             key_changes.append((start, k))
             prev = k
@@ -480,6 +509,7 @@ def main():
     ap.add_argument("--voices", default=None)
     ap.add_argument("--materials", default=None)
     ap.add_argument("--struct", default=None)
+    ap.add_argument("--localkeys", default=None, help="out/<name>.localkeys.json (intra-section key changes)")
     ap.add_argument("--audio", default=None)
     ap.add_argument("--outdir", default="out")
     ap.add_argument("--px", type=float, default=PX_PER_SEC)
@@ -497,9 +527,11 @@ def main():
 
     doc = json.loads(src.read_text(encoding="utf-8"))
     vp, mp, sp = side(".voices.json", args.voices), side(".materials.json", args.materials), side(".struct.json", args.struct)
+    lp = side(".localkeys.json", getattr(args, "localkeys", None))
     voices = json.loads(vp.read_text(encoding="utf-8")) if vp.exists() else {}
     mats = json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {}
     struct = json.loads(sp.read_text(encoding="utf-8")) if sp.exists() else {}
+    loc = json.loads(lp.read_text(encoding="utf-8")) if lp.exists() else {}
     outdir = Path(args.outdir)
     name = src.name.replace(".chords.json", "")
 
@@ -508,7 +540,7 @@ def main():
     if audio_rel is None and audio_src:
         audio_rel = Path(os.path.relpath(audio_src.resolve(), outdir.resolve())).as_posix()
 
-    page = build_page(doc, voices, mats, struct, audio_rel, args.px)
+    page = build_page(doc, voices, mats, struct, audio_rel, args.px, localkeys=loc)
     out = outdir / f"{name}.player.html"
     out.write_text(page, encoding="utf-8")
     print(f"[{name}] -> {out}  audio={audio_rel}")
