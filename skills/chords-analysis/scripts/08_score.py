@@ -39,6 +39,27 @@ QUALITY_TO_M21 = {
     "maj7": "maj7", "min7": "m7", "7": "7", "hdim7": "m7b5", "dim7": "dim7",
     "sus2": "sus2", "sus4": "sus4", "6": "6", "min6": "m6", "maj6": "6",
     "minmaj7": "mMaj7",
+    # 扩展语汇(music21 figure 写法)
+    "9": "9", "maj9": "maj7add9", "min9": "m9",
+    "11": "11", "min11": "m11",
+    "13": "13", "maj13": "maj7add13", "min13": "m13",
+    "7b9": "7b9", "7#9": "7#9", "7#11": "7#11", "7b13": "7b13",
+    "7b5": "7b5", "7#5": "7#5", "aug7": "aug7",
+    "maj7#11": "maj7#11", "maj7#5": "maj7#5",
+    "add9": "add9", "madd9": "madd9", "6/9": "6add9", "7sus4": "7sus4",
+}
+
+M21_EXT_INTERVALS = {
+    "9": [0, 4, 7, 10, 2], "maj9": [0, 4, 7, 11, 2], "min9": [0, 3, 7, 10, 2],
+    "11": [0, 4, 7, 10, 2, 5], "min11": [0, 3, 7, 10, 2, 5],
+    "13": [0, 4, 7, 10, 2, 9], "maj13": [0, 4, 7, 11, 2, 9],
+    "min13": [0, 3, 7, 10, 2, 9],
+    "7b9": [0, 4, 7, 10, 1], "7#9": [0, 4, 7, 10, 3],
+    "7#11": [0, 4, 7, 10, 6], "7b13": [0, 4, 7, 10, 8],
+    "7b5": [0, 4, 6, 10], "7#5": [0, 4, 8, 10], "aug7": [0, 4, 8, 10],
+    "maj7#11": [0, 4, 7, 11, 6], "maj7#5": [0, 4, 8, 11],
+    "add9": [0, 4, 7, 2], "madd9": [0, 3, 7, 2], "6/9": [0, 4, 7, 9, 2],
+    "7sus4": [0, 5, 7, 10],
 }
 
 
@@ -54,11 +75,32 @@ def pc_of(name):
 
 
 def split_label(label):
-    """'Bb:maj7/F' -> ('Bb', 'maj7', 'F')。"""
-    body = label.split("/", 1)
-    root, qual = body[0].split(":", 1) if ":" in body[0] else (body[0], "maj")
-    bass = body[1] if len(body) > 1 else None
+    """'Bb:maj7/F' -> ('Bb','maj7','F');'F:6/9' -> ('F','6/9',None)。"""
+    body, bass = (label, None)
+    if "/" in label:
+        cand_body, cand_bass = label.rsplit("/", 1)
+        if len(cand_bass) in (1, 2) and cand_bass[0] in "ABCDEFG" and all(
+                ch in "#b♯♭" for ch in cand_bass[1:]):
+            body, bass = cand_body, cand_bass
+    root, qual = body.split(":", 1) if ":" in body else (body, "maj")
     return root, qual, bass
+
+
+def simple_label(label):
+    """扩展和弦的降级写法:13 -> 7,m9 -> m7,maj9 -> maj7,供排版库解析失败时回退。"""
+    root, qual, bass = split_label(label)
+    if qual.startswith("min") or qual == "madd9":
+        q2 = "min7" if qual in ("min9", "min11", "min13") else "min"
+    elif qual.startswith("maj") or qual in ("add9", "6/9"):
+        q2 = "maj7" if qual in ("maj9", "maj13", "maj7#11", "maj7#5") else "maj"
+    elif qual in ("9", "11", "13", "7b9", "7#9", "7#11", "7b13",
+                  "7b5", "7#5", "aug7"):
+        q2 = "7"
+    elif qual == "7sus4":
+        q2 = "sus4"
+    else:
+        q2 = "maj"
+    return f"{root}:{q2}" + (f"/{bass}" if bass else "")
 
 
 def to_m21_symbol(label):
@@ -208,8 +250,9 @@ def chord_pitches(label, lo, hi):
         "m7b5": [0, 3, 6, 10], "dim7": [0, 3, 6, 9],
         "sus2": [0, 2, 7], "sus4": [0, 5, 7], "6": [0, 4, 7, 9],
         "m6": [0, 3, 7, 9], "mMaj7": [0, 3, 7, 11],
-    }.get(quality, [0, 4, 7])
-    pcs = [(r + i) % 12 for i in intervals]
+    }
+    intervals.update(M21_EXT_INTERVALS)
+    pcs = [(r + i) % 12 for i in intervals.get(quality, [0, 4, 7])]
 
     # 把音级排到 lo..hi 区间,根音尽量低
     pitches = []
@@ -376,8 +419,16 @@ def build_score(doc, voices, materials, struct=None, with_harmony=True, stats=No
         bar = grid.bar_of(pos)
         off = max(0.0, pos - bar * meter_n)
         try:
-            cs = harmony.ChordSymbol(to_m21_symbol(c["label"]))
-            mel_measures[bar].insert(off, cs)
+            cs = None
+            for fig in dict.fromkeys([to_m21_symbol(c["label"]),
+                                      to_m21_symbol(simple_label(c["label"]))]):
+                try:
+                    cs = harmony.ChordSymbol(fig)
+                    break
+                except Exception:
+                    continue
+            if cs is not None:
+                mel_measures[bar].insert(off, cs)
         except Exception:
             continue
 

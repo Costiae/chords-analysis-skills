@@ -60,7 +60,7 @@ def fmt_sec(s):
 
 def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: Optional[Path],
             voices_file: Optional[Path] = None, quality_file: Optional[Path] = None,
-            transcription_file: Optional[Path] = None):
+            transcription_file: Optional[Path] = None, force_quality: bool = False):
     sys.path.insert(0, str(Path(__file__).parent))
     import harmony as H
 
@@ -95,7 +95,7 @@ def process(path: Path, outdir: Path, beats_file: Optional[Path], struct_file: O
     # 大词汇和弦质量(01d_quality.py;神经大词汇模型可用时优先于它)
     quality_doc = None
     engine = (doc.get("song") or {}).get("engine", "")
-    if quality_file and quality_file.exists() and "btc" not in engine.lower():
+    if quality_file and quality_file.exists() and (force_quality or "btc" not in engine.lower()):
         quality_doc = json.loads(quality_file.read_text(encoding="utf-8-sig"))
     quality_by_start = {}
     for q in ((quality_doc or {}).get("chords") or []):
@@ -458,7 +458,8 @@ def main():
                 sf if sf.exists() else None,
                 vf if vf.exists() else None,
                 qf if qf.exists() else None,
-                tf if tf.exists() else None)
+                tf if tf.exists() else None,
+                force_quality=bool(args.quality))
 
 
 if __name__ == "__main__":

@@ -74,6 +74,8 @@ def main():
     ap.add_argument("--outdir", default="out")
     ap.add_argument("--skip", default="",
                     help="逗号分隔,可含 stems/transcribe/quality/map/keys/materials/score/review/player/bundle")
+    ap.add_argument("--extended-harmony", action="store_true",
+                    help="即使 BTC 生效也跑 01d 的扩展语汇(9/11/13/变化音)")
     args = ap.parse_args()
     skip = {s.strip() for s in args.skip.split(",") if s.strip()}
 
@@ -102,17 +104,24 @@ def main():
         engine = ""
         if raw.exists():
             engine = json.loads(raw.read_text(encoding="utf-8"))["song"].get("engine", "")
-        if "quality" not in skip and "btc" not in engine:
-            layers["quality"] = run("01d_quality", [
-                str(SCRIPTS / "01d_quality.py"), str(audio), str(raw),
-                "--outdir", args.outdir])
+        if "quality" not in skip and ("btc" not in engine or args.extended_harmony):
+            q_cmd = [str(SCRIPTS / "01d_quality.py"), str(audio), str(raw),
+                     "--outdir", args.outdir]
+            if args.extended_harmony:
+                q_cmd += ["--vocabulary", "extended"]
+            layers["quality"] = run("01d_quality" + (" (extended)" if args.extended_harmony else ""),
+                                    q_cmd)
 
         if "transcribe" not in skip:
             layers["transcription"] = run("01e_transcribe (basic-pitch)", [
                 str(SCRIPTS / "01e_transcribe.py"), str(audio), "--outdir", args.outdir])
 
-        layers["format"] = run("02_format", [
-            str(SCRIPTS / "02_format.py"), str(raw), "--outdir", args.outdir])
+        fmt_cmd = [str(SCRIPTS / "02_format.py"), str(raw), "--outdir", args.outdir]
+        if args.extended_harmony:
+            qpath = Path(args.outdir) / f"{stem}.quality.json"
+            if qpath.exists():
+                fmt_cmd += ["--quality", str(qpath)]
+        layers["format"] = run("02_format", fmt_cmd)
         layers["summary"] = run("03_summarize", [
             str(SCRIPTS / "03_summarize.py"),
             str(Path(args.outdir) / f"{stem}.chords.json")])

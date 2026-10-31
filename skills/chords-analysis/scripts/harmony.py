@@ -18,11 +18,27 @@ QUALITY_INTERVALS = {
     "hdim7": [0, 3, 6, 10], "dim7": [0, 3, 6, 9],
     "sus2": [0, 2, 7], "sus4": [0, 5, 7], "6": [0, 4, 7, 9], "min6": [0, 3, 7, 9],
     "maj6": [0, 4, 7, 9], "minmaj7": [0, 3, 7, 11],
+    # --- 扩展语汇(9/11/13 与变化音) ---
+    "9": [0, 4, 7, 10, 2], "maj9": [0, 4, 7, 11, 2], "min9": [0, 3, 7, 10, 2],
+    "11": [0, 4, 7, 10, 2, 5], "min11": [0, 3, 7, 10, 2, 5],
+    "13": [0, 4, 7, 10, 2, 9], "maj13": [0, 4, 7, 11, 2, 9],
+    "min13": [0, 3, 7, 10, 2, 9],
+    "7b9": [0, 4, 7, 10, 1], "7#9": [0, 4, 7, 10, 3],
+    "7#11": [0, 4, 7, 10, 6], "7b13": [0, 4, 7, 10, 8],
+    "7b5": [0, 4, 6, 10], "7#5": [0, 4, 8, 10], "aug7": [0, 4, 8, 10],
+    "maj7#11": [0, 4, 7, 11, 6], "maj7#5": [0, 4, 8, 11],
+    "add9": [0, 4, 7, 2], "madd9": [0, 3, 7, 2], "6/9": [0, 4, 7, 9, 2],
+    "7sus4": [0, 5, 7, 10],
 }
 
 # 不同引擎的标签别名(BTC 用 maj6,Chordino 用 6 …)
 QUALITY_ALIASES = {"maj6": "6", "m6": "min6", "sus": "sus4", "dom7": "7",
-                   "minmaj7": "minmaj7"}
+                   "minmaj7": "minmaj7",
+                   # 扩展语汇的常见写法
+                   "m7b5": "hdim7", "min7b5": "hdim7", "halfdim": "hdim7",
+                   "dom9": "9", "dom13": "13", "dom7b9": "7b9",
+                   "maj9#11": "maj7#11", "add2": "add9", "69": "6/9",
+                   "7alt": "7#9", "min9b5": "hdim7"}
 
 
 def canonical_quality(q: str) -> str:
@@ -47,10 +63,21 @@ def pc_name(idx: int, use_flats=False):
     return (PC_FLAT if use_flats else PC_SHARP)[idx % 12]
 
 
+def split_slash(label: str):
+    """把 'C:maj/E' 拆成 ('C:maj', 'E');'F:6/9' 不拆(9 不是音名)。"""
+    if "/" not in label:
+        return label, None
+    body, tail = label.rsplit("/", 1)
+    if len(tail) in (1, 2) and tail[0] in "ABCDEFG" and all(c in "#b♯♭" for c in tail[1:]):
+        return body, tail
+    return label, None
+
+
 def parse_label(label: str):
     """'C:maj' -> ('C', 'maj');'N' -> (None, None)"""
     if not label or label == "N":
         return None, None
+    label, _ = split_slash(label)
     if ":" in label:
         root, qual = label.split(":", 1)
         return root, qual

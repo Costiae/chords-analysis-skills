@@ -35,12 +35,18 @@ def roman(numeral_key: str, label: str) -> str:
     table = ROMAN_MINOR if kmode == "minor" else ROMAN
     r = table[deg]
     # 小调惯用:自然小调的 v/III 等保留原级数,只标记性质
-    if qual not in ("maj",):
-        r = r.lower() if qual.startswith("min") else r
+    minor_q = {"min", "min6", "min7", "min9", "min11", "min13", "minmaj7", "madd9"}
+    if qual in minor_q:
+        r = r.lower()
     suffix = ""
     if qual in ("maj7", "min7", "7", "hdim7", "dim7", "6", "min6"):
         suffix = {"maj7": "maj7", "min7": "7", "7": "7", "hdim7": "ø7",
                   "dim7": "°7", "6": "6", "min6": "6"}[qual]
+    elif qual in ("9", "maj9", "min9", "11", "min11", "13", "maj13", "min13",
+                  "7b9", "7#9", "7#11", "7b13", "7b5", "7#5", "aug7",
+                  "maj7#11", "maj7#5", "add9", "madd9", "6/9", "7sus4"):
+        suffix = {"min9": "9", "min11": "11", "min13": "13", "madd9": "add9",
+                  "aug7": "+7"}.get(qual, qual)
     elif qual == "dim":
         suffix = "°"
     elif qual == "aug":

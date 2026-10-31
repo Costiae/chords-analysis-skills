@@ -111,14 +111,22 @@ If setup fails, report the error to the user; do not silently switch engines.
 2d. **Chord quality (large vocabulary)** — order matters:
    - If engine `btc-170` is available (weights cached), **skip this step**: BTC
      already outputs 170-class labels and 02_format ignores the template file
-     when the engine is BTC.
+     when the engine is BTC. BTC's vocabulary is still triads/7ths/sus/dim/aug;
+     it cannot emit 9/11/13 or altered tones.
    - Otherwise run the offline fallback:
    ```
-   <PY> -W ignore <skill-dir>/scripts/01d_quality.py audio/<file> out/<name>.raw.json --outdir out
+   <PY> -W ignore <skill-dir>/scripts/01d_quality.py audio/<file> out/<name>.raw.json --outdir out \
+       [--vocabulary basic|extended]
    ```
-   Keeps madmom's root, refines quality by chroma template matching over
-   13 qualities, with family restriction (never flips the third), energy
-   validation and per-quality margins.
+   Keeps the input root and refines quality by chroma template matching. `basic`
+   = 14 classes (triads, 7ths, sus, 6). `extended` adds 9/11/13 and alterations
+   (`7b9`, `7#9`, `7#11`, `7b13`, `7b5`, `7#5`, `maj7#11`, `add9`, `6/9`, `7sus4`)
+   for 36 classes total. Extended upgrades are **only allowed from a 7th or 6th
+   base** and require the characteristic tone to be measurable: letting a plain
+   triad jump to add9/6/9 measured worse (mirex 0.907 → 0.888 on POP909), so it
+   is deliberately excluded. Family restriction (never flips the third), energy
+   validation and per-quality margins still apply.
+   To use it with BTC active, pass `run_all.py --extended-harmony`.
 2e. **Transcription (扒谱, optional)**:
    ```
    <PY> -W ignore <skill-dir>/scripts/01e_transcribe.py audio/<file> --outdir out
@@ -267,6 +275,21 @@ All remote weights go through `scripts/models.py` + `models/manifest.json`:
    prints root/majmin/triad/sevenths/mirex scores (mir_eval) and writes
    `<name>.chords.eval.json`. Run this before/after changing engines instead of
    arguing from impressions.
+
+6. **Dataset evaluation (regression baseline, not self-consistency)**:
+   ```
+   <PY> -W ignore <skill-dir>/scripts/12_eval_set.py pop909 \
+       --dir .cache/eval/pop909 --songs 001,002,003 --limit 90 \
+       --outdir out/eval --refine basic|extended|none [--fetch]
+   ```
+   Downloads/uses POP909 (MIT, pop songs with MIDI + chord annotations),
+   synthesizes audio from the MIDI, runs `01_extract.py`, optionally
+   `01d_quality.py` + `02_format.py`, and scores against the reference with
+   mir_eval (root/majmin/mirex/sevenths/triads). Audio is synthesized, so the
+   numbers are a **regression baseline**: compare the same table before/after a
+   change. Current baseline (3 songs × 90 s, madmom ensemble):
+   `root 0.919 / majmin 0.920 / mirex 0.907 (basic) / 0.905 (extended) / 0.886 (raw)`.
+   `05_eval.py` remains self-consistency only — never quote its 1.0000 as accuracy.
 
 ## Analysis requirements
 

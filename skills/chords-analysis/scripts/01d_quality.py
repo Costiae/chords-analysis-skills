@@ -41,12 +41,43 @@ QUALITY_WEIGHTS = {
     "min6":  {0: 1.0, 3: 0.9, 7: 0.75, 9: 0.7},
 }
 
-# 只允许"同族"升级:三音决定大小调,不轻易翻转(madmom 的三音判断更可靠)
-FAMILY = {
-    "maj": "maj", "maj7": "maj", "6": "maj", "sus2": "maj", "sus4": "maj", "aug": "maj",
-    "min": "min", "min7": "min", "min6": "min", "hdim7": "min", "dim7": "min", "dim": "min",
-    "7": "dom",
+# 扩展语汇(9/11/13 与变化音)。延伸音权重低,因为 chroma 里它们常被谐波淹没。
+EXTENDED_WEIGHTS = {
+    "9":      {0: 1.0, 4: 0.9, 7: 0.6, 10: 0.75, 2: 0.55},
+    "maj9":   {0: 1.0, 4: 0.9, 7: 0.6, 11: 0.75, 2: 0.55},
+    "min9":   {0: 1.0, 3: 0.9, 7: 0.6, 10: 0.75, 2: 0.55},
+    "11":     {0: 1.0, 4: 0.85, 7: 0.5, 10: 0.7, 2: 0.5, 5: 0.5},
+    "min11":  {0: 1.0, 3: 0.85, 7: 0.5, 10: 0.7, 2: 0.5, 5: 0.5},
+    "13":     {0: 1.0, 4: 0.85, 7: 0.5, 10: 0.7, 2: 0.45, 9: 0.55},
+    "maj13":  {0: 1.0, 4: 0.85, 7: 0.5, 11: 0.7, 2: 0.45, 9: 0.55},
+    "min13":  {0: 1.0, 3: 0.85, 7: 0.5, 10: 0.7, 2: 0.45, 9: 0.55},
+    "7b9":    {0: 1.0, 4: 0.85, 7: 0.55, 10: 0.7, 1: 0.55},
+    "7#9":    {0: 1.0, 4: 0.85, 7: 0.55, 10: 0.7, 3: 0.55},
+    "7#11":   {0: 1.0, 4: 0.85, 7: 0.5, 10: 0.7, 6: 0.55},
+    "7b13":   {0: 1.0, 4: 0.85, 7: 0.5, 10: 0.7, 8: 0.55},
+    "7b5":    {0: 1.0, 4: 0.85, 6: 0.6, 10: 0.7},
+    "7#5":    {0: 1.0, 4: 0.85, 8: 0.6, 10: 0.7},
+    "aug7":   {0: 1.0, 4: 0.85, 8: 0.6, 10: 0.7},
+    "maj7#11": {0: 1.0, 4: 0.85, 7: 0.5, 11: 0.7, 6: 0.55},
+    "maj7#5": {0: 1.0, 4: 0.85, 8: 0.6, 11: 0.7},
+    "add9":   {0: 1.0, 4: 0.9, 7: 0.7, 2: 0.6},
+    "madd9":  {0: 1.0, 3: 0.9, 7: 0.7, 2: 0.6},
+    "6/9":    {0: 1.0, 4: 0.85, 7: 0.6, 9: 0.55, 2: 0.55},
+    "7sus4":  {0: 1.0, 5: 0.9, 7: 0.7, 10: 0.7},
 }
+
+# 扩展升级:只允许从"同一基础和弦"往上加音,避免把三和弦直接猜成 13 和弦
+ALLOWED_FROM = {
+    # 三和弦允许升到七和弦;9/11/13 要求七音与延伸音同时可测,避免"猜"出延伸音
+    "maj": ["maj", "maj7", "6", "maj9", "maj13", "maj7#11", "maj7#5"],
+    "maj7": ["maj7", "maj9", "maj13", "maj7#11", "maj7#5"],
+    "min": ["min", "min7", "min6", "min9", "min11", "min13"],
+    "min7": ["min7", "min9", "min11", "min13"],
+    "7": ["7", "9", "11", "13", "7b9", "7#9", "7#11", "7b13",
+          "7b5", "7#5", "aug7", "7sus4"],
+    "6": ["6"],
+}
+
 # 音数越多越可疑(chroma 谐波泄漏常伪造 9/11 音);复杂度惩罚
 # 升级阈值按性质分级:越"花"的性质要求证据越强
 UPGRADE_MARGIN = {
@@ -54,12 +85,28 @@ UPGRADE_MARGIN = {
     "dim": 0.05, "aug": 0.06,
     "6": 0.06, "min6": 0.07, "hdim7": 0.07, "dim7": 0.08,
     "sus2": 0.12, "sus4": 0.12,   # 挂留多为旋律经过,证据要求最高
+    # 扩展和弦:证据要求更高
+    "9": 0.09, "maj9": 0.09, "min9": 0.09,
+    "11": 0.12, "min11": 0.12, "13": 0.12, "maj13": 0.12, "min13": 0.12,
+    "7b9": 0.11, "7#9": 0.11, "7#11": 0.11, "7b13": 0.11,
+    "7b5": 0.10, "7#5": 0.10, "aug7": 0.10,
+    "maj7#11": 0.11, "maj7#5": 0.10,
+    "add9": 0.10, "madd9": 0.10, "6/9": 0.10, "7sus4": 0.12,
 }
 
 
-def score_quality(chroma_vec, root_idx, quality):
+# 基础语汇的"同族"升级(三音决定大小调,不轻易翻转)
+FAMILY = {
+    "maj": "maj", "maj7": "maj", "6": "maj", "sus2": "maj", "sus4": "maj", "aug": "maj",
+    "min": "min", "min7": "min", "min6": "min", "hdim7": "min", "dim7": "min", "dim": "min",
+    "7": "dom",
+}
+
+
+def score_quality(chroma_vec, root_idx, quality, weights=None):
+    table = weights or QUALITY_WEIGHTS
     tpl = np.zeros(12)
-    for interval, w in QUALITY_WEIGHTS[quality].items():
+    for interval, w in table[quality].items():
         tpl[(root_idx + interval) % 12] = w
     # 余弦相似度(模板稀疏,chroma 归一化)
     nv = np.linalg.norm(chroma_vec)
@@ -105,14 +152,51 @@ def validate_quality(chroma_vec, root_idx, quality):
         return e(8) > 0.4 * root_e
     if quality == "dim":
         return e(6) > 0.35 * root_e
+    # --- 扩展和弦:特性音必须有实际能量;9/11/13 还要求七音同时存在 ---
+    if quality in ("9", "min9"):
+        return e(2) > 0.30 * root_e and e(10) > 0.38 * root_e
+    if quality == "maj9":
+        return e(2) > 0.30 * root_e and e(11) > 0.38 * root_e
+    if quality in ("11", "min11"):
+        return e(2) > 0.25 * root_e and e(5) > 0.28 * root_e and e(10) > 0.38 * root_e
+    if quality in ("13", "min13"):
+        return e(2) > 0.25 * root_e and e(9) > 0.28 * root_e and e(10) > 0.38 * root_e
+    if quality == "maj13":
+        return e(2) > 0.25 * root_e and e(9) > 0.28 * root_e and e(11) > 0.38 * root_e
+    if quality == "7b9":
+        return e(1) > 0.32 * root_e
+    if quality == "7#9":
+        return e(3) > 0.32 * root_e
+    if quality == "7#11":
+        return e(6) > 0.30 * root_e
+    if quality == "7b13":
+        return e(8) > 0.30 * root_e
+    if quality == "7b5":
+        return e(6) > 0.32 * root_e
+    if quality in ("7#5", "aug7"):
+        return e(8) > 0.32 * root_e
+    if quality == "maj7#11":
+        return e(11) > 0.40 * root_e and e(6) > 0.30 * root_e
+    if quality == "maj7#5":
+        return e(11) > 0.40 * root_e and e(8) > 0.32 * root_e
+    if quality in ("add9", "madd9"):
+        return e(2) > 0.35 * root_e
+    if quality == "6/9":
+        return e(9) > 0.35 * root_e and e(2) > 0.30 * root_e
+    if quality == "7sus4":
+        return e(5) > 0.35 * root_e and e(4) < 0.45 * root_e
     return True
 
 
-def analyze(audio: Path, raw_doc: dict, min_dur=0.35):
+def analyze(audio: Path, raw_doc: dict, min_dur=0.35, vocabulary="basic"):
     import librosa
     y, sr = librosa.load(str(audio), sr=22050, mono=True)
     chroma = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=1024, bins_per_octave=36)
     times = librosa.times_like(chroma, sr=sr, hop_length=1024)
+    extended = vocabulary == "extended"
+    weights = dict(QUALITY_WEIGHTS)
+    if extended:
+        weights.update(EXTENDED_WEIGHTS)
 
     out = []
     for c in raw_doc["chords"]:
@@ -122,6 +206,7 @@ def analyze(audio: Path, raw_doc: dict, min_dur=0.35):
         root, qual0 = H.parse_label(c["label"])
         if root is None:
             continue
+        qual0 = H.canonical_quality(qual0)
         i0 = np.searchsorted(times, c["start"])
         i1 = np.searchsorted(times, c["end"])
         if i1 - i0 < 2:
@@ -131,11 +216,19 @@ def analyze(audio: Path, raw_doc: dict, min_dur=0.35):
         vec = vec / (vec.sum() + 1e-9)
 
         root_idx = H.pc_index(root)
-        family = FAMILY.get(qual0)
-        allowed = [q for q in QUALITY_WEIGHTS if FAMILY.get(q) == family]
-        if not allowed:
-            allowed = [qual0]
-        scores = {q: score_quality(vec, root_idx, q) for q in allowed}
+        if extended:
+            # 扩展模式 = 基础候选 ∪ 扩展候选:不能因为"扩展"反而丢掉基本性质
+            allowed = list(ALLOWED_FROM.get(qual0) or [])
+            fam = FAMILY.get(qual0)
+            if fam:
+                allowed += [q for q in QUALITY_WEIGHTS if FAMILY.get(q) == fam]
+            allowed = list(dict.fromkeys(allowed)) or [qual0]
+        else:
+            family = FAMILY.get(qual0)
+            allowed = [q for q in QUALITY_WEIGHTS if FAMILY.get(q) == family]
+            if not allowed:
+                allowed = [qual0]
+        scores = {q: score_quality(vec, root_idx, q, weights) for q in allowed}
         ranked = sorted(scores.items(), key=lambda x: -x[1])
         best_q, best_s = ranked[0]
         second_s = ranked[1][1] if len(ranked) > 1 else 0.0
@@ -163,17 +256,22 @@ def main():
     ap.add_argument("raw_json")
     ap.add_argument("--outdir", default="out")
     ap.add_argument("--min-dur", type=float, default=0.35)
+    ap.add_argument("--vocabulary", default="basic", choices=["basic", "extended"],
+                    help="basic=三/七和弦;extended=加 9/11/13 与变化音(证据要求更高)")
     args = ap.parse_args()
 
     audio = resample_path(Path(args.audio), Path(args.outdir) / ".resampled")
     raw = json.loads(Path(args.raw_json).read_text(encoding="utf-8-sig"))
-    chords = analyze(audio, raw, args.min_dur)
+    chords = analyze(audio, raw, args.min_dur, args.vocabulary)
 
     changed = [c for c in chords if c["quality"] != c["madmom_quality"]]
+    vocab = sorted(QUALITY_WEIGHTS) if args.vocabulary == "basic" else sorted(
+        {**QUALITY_WEIGHTS, **EXTENDED_WEIGHTS})
     doc = {
         "schema": "quality-v1",
         "engine": "template-chroma",
-        "vocabulary": sorted(QUALITY_WEIGHTS),
+        "vocabulary_mode": args.vocabulary,
+        "vocabulary": vocab,
         "changed": len(changed),
         "total": len(chords),
         "chords": chords,

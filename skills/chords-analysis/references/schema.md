@@ -73,9 +73,12 @@
 - `voices`(可选):`{melody_source, melody_notes, melody_pitch_class_profile,
   melody_phrase_endings, bass_notes, bass_inversions}`。
   完整结构见下节的 `voices-v1`。
-- `quality`(可选):`{engine, vocabulary, upgraded, total}`。engine 为
+- `quality`(可选):`{engine, vocabulary, vocabulary_mode, upgraded, total}`。engine 为
   `template-chroma` 表示离线模板推断;若接入神经大词汇模型则为对应引擎名。
   `chords[].quality_source` / `quality_margin` 标记被升级的和弦及其证据强度。
+  `vocabulary_mode: extended` 时语汇含 9/11/13 与变化音(7b9/7#9/7#11/7b13/7b5/7#5/
+  maj7#11/add9/6/9/7sus4),但**只允许从七和弦/六和弦基础上升级**,三和弦不会
+  直接跳到 add9/6/9(评测里会掉分)。
 - `stats.chord_histogram`:按出现时长(秒)加权的和弦统计,四舍五入到 0.1s。
 
 ## voices-v1 (`<name>.voices.json`)
@@ -275,6 +278,33 @@
 **这是可读谱,不是排版成品**:符杠未连、休止符省略、音符来自识别结果。
 需要正式谱面时用 `.lead.musicxml` / `.score.musicxml`。
 
+## eval-set-v1（`out/eval/<dataset>.<tag>.eval.json`）
+
+`12_eval_set.py` 的外部评测结果。**这不是自洽校验**:参考标注来自数据集。
+
+| Field | Meaning |
+|---|---|
+| `dataset` | 数据集名(`pop909`) |
+| `refine` | `none`(原始识别)/ `basic` / `extended`(质量层) |
+| `limit_seconds` | 每首取前 N 秒(控制运行时间) |
+| `synthesized_audio` | 音频是否由 MIDI 合成(true 时只能当回归基线,不是真实录音精度) |
+| `songs[]` | 每首的 root/majmin/mirex/sevenths/triads/bass |
+| `aggregate` | 各指标均值 |
+
+解读:POP909 用 MIDI 合成音频,音色与真实录音不同;它验证的是**链路与相对改进**,
+不是绝对精度。改动前后跑同一组歌、同一 `limit`,`aggregate` 才有可比性。
+
+当前基线(3 首 × 90s,madmom 双引擎):
+
+| refine | root | majmin | mirex | sevenths |
+|---|---|---|---|---|
+| none | 0.919 | 0.920 | 0.886 | 0.880 |
+| basic | 0.919 | 0.920 | **0.907** | 0.877 |
+| extended | 0.919 | 0.920 | 0.905 | 0.873 |
+
+扩展语汇在流行三和弦上比 basic 低 0.2 个百分点(延伸音模板偶尔抢分),
+但在有七音/九音证据的爵士和声上才有意义;需要时用 `--extended-harmony` 显式开启。
+
 ## 衍生文件
 
 | File | Content |
@@ -296,6 +326,7 @@
 | `audio/<name>.m4a` | 96k mono preview used by the player (generated with ffmpeg) |
 | `index.html` | **bundle**: per-track cards, score checks and links to every artifact |
 | `<name>.chords.eval.json` | evaluation scores vs a reference annotation (05_eval.py) |
+| `out/eval/<dataset>.<tag>.eval.json` | **external dataset evaluation** (12_eval_set.py; POP909 adapter) |
 | `<name>.analysis.md` | LLM analysis report |
 
 ## LLM 分析约定

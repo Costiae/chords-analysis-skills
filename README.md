@@ -86,6 +86,7 @@ out/xxx.chords.json  ★ authoritative + xxx.lab (MIREX)
   │  scripts/03_summarize.py   timeline + harmonic rhythm
   │  scripts/04_map.py         harmonic map (bar grid, Roman numerals, n-grams)
   │  scripts/05_eval.py        mir_eval regression vs reference annotation
+  │  scripts/12_eval_set.py    external dataset eval (POP909), regression baseline
   │  scripts/06_local_keys.py  section-key audit: coverage gaps + tonicization directions
   │  scripts/07_sections.py   section materials from melody contour + chords, label × material
   │  scripts/08_score.py      MusicXML (lead sheet + 3-part) + tempo-mapped MIDI
@@ -107,7 +108,7 @@ out/index.html · xxx.map.md · xxx.lead.musicxml · xxx.score.mid · xxx.review
 | Tempo | all-in-one + beat-interval curve | BPM + meter + tempo curve |
 | Melody | demucs vocals + pyin | notes, pitch-class profile, phrase endings |
 | Bass / inversions | demucs bass + Basic Pitch (event-based) → octave fold → monophonize → sub-harmonic repair | slash chords (`C:maj/E`), `bass_share` gate |
-| Chord quality | BTC-170 → template fallback | maj7/min7/7/sus/dim/aug |
+| Chord quality | BTC-170 → template fallback (basic/extended) | maj7/min7/7/sus/dim/aug + 9/11/13/altered |
 | **Transcription** | **Basic Pitch per demucs stem** | **note events + MIDI per stem** |
 | Key / mode | chords + melody + phrase anchors + **section-scoped** key, coverage-checked | per-section tonic, gaps where it fails |
 | Tonicization | `06_local_keys.py` (dominant → target resolutions) | direction (V/vi, V/III…), duration |
@@ -117,7 +118,33 @@ out/index.html · xxx.map.md · xxx.lead.musicxml · xxx.score.mid · xxx.review
 | **Player** | **`11_player.py` (dots on staves + `<audio>`)** | **`.player.html`: original audio, per-section key signature, score follows, current note/chord highlighted** |
 | Modulations | per-section key estimation | `song.modulations`, per-segment keys |
 | Progressions | n-gram mining | repeated progressions with Roman numerals |
-| Evaluation | mir_eval (05_eval.py) | root/majmin/triad/sevenths/mirex |
+| Evaluation | mir_eval (05_eval.py self-check; **12_eval_set.py external**) | root/majmin/triad/sevenths/mirex |
+
+## Evaluation
+
+`05_eval.py` is **self-consistency only** (it scores the pipeline against the
+`.lab` it just wrote; 1.0000 means "the plumbing works", not accuracy).
+
+`12_eval_set.py` adds an external regression baseline on **POP909** (MIT, pop
+songs with MIDI + chord annotations): it synthesizes audio from the MIDI, runs
+the real extraction chain and scores with mir_eval. Three songs × 90 s, madmom
+ensemble:
+
+| quality refinement | root | majmin | mirex | sevenths |
+|---|---|---|---|---|
+| none | 0.919 | 0.920 | 0.886 | 0.880 |
+| basic (14 classes) | 0.919 | 0.920 | **0.907** | 0.877 |
+| extended (36 classes) | 0.919 | 0.920 | 0.905 | 0.873 |
+
+Audio is synthesized, so these are **relative** numbers: compare the same table
+before and after a change. The harness also caught a design mistake — letting
+triads jump straight to `add9`/`6/9` dropped mirex to 0.888, so extended upgrades
+are now restricted to 7th/6th bases.
+
+```sh
+PY scripts/12_eval_set.py pop909 --dir .cache/eval/pop909 --songs 001,002,003 \
+   --limit 90 --outdir out/eval --refine basic --fetch
+```
 
 ## What the score is, and what it is not
 
@@ -134,9 +161,9 @@ dedicated score model, and it says so in the part names.
   performance techniques, lyrics. Tab export is therefore not meaningful yet.
 
 Honest gaps: instrument identification beyond the four demucs stems, dense
-polyphonic transcription, and — most importantly — **no ground-truth
-annotation**. `05_eval.py`'s 1.0000 is self-consistency; engine agreement
-(75–77%) is not accuracy.
+polyphonic transcription, and **no real-recording ground truth** — the POP909
+harness uses synthesized audio, so it validates the chain and relative changes,
+not absolute accuracy on commercial recordings.
 
 ## Next: multi-instrument transcription (separate environment)
 
