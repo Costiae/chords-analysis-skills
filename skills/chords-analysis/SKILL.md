@@ -239,11 +239,12 @@ All remote weights go through `scripts/models.py` + `models/manifest.json`:
    section bands, all positioned by **seconds** so they stay in sync with audio.
    A red playhead moves with playback, the current notes and chord highlight, the
    view auto-scrolls, and clicking the score seeks. Space toggles play/pause.
-   Notes are drawn as **dots only** (pitch + onset), with a white halo so they
-   separate from the staff lines. No stems, flags or note values: the transcribed
-   note lengths are not reliable enough to claim a rhythm, and horizontal spacing
-   already carries the timing. This is a readable pitch/timing map, not an
-   engraving.
+   Note values are not drawn at all: dots only, with a white halo so they
+   separate from the staff lines. Each note is engraved with the key signature
+   of **its own section** (not the global key), and the signature glyphs are
+   drawn at every key change; the section band shows label/material plus the
+   key/mode and a coloured strip per key. Horizontal spacing carries timing.
+   This is a readable pitch/timing map, not an engraving.
 4h. **Bundle** (one entry point for humans and agents):
    ```
    <PY> -W ignore <skill-dir>/scripts/10_bundle.py --outdir out

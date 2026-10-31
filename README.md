@@ -114,7 +114,7 @@ out/index.html · xxx.map.md · xxx.lead.musicxml · xxx.score.mid · xxx.review
 | Section material | `07_sections.py` (transposition-invariant melody contour + chords) | material IDs, label × material matrix, pre-chorus |
 | **Score** | **`08_score.py` (downbeat grid + tempo curve + music21)** | **`.lead.musicxml`, `.score.musicxml`, tempo-mapped `.score.mid`** |
 | **Human review** | **`09_review.py` (SVG, no deps)** | **`.review.html`: sections + chords + melody + bass on one timeline** |
-| **Player** | **`11_player.py` (simplified staves + `<audio>`)** | **`.player.html`: original audio, score follows, current note/chord highlighted** |
+| **Player** | **`11_player.py` (dots on staves + `<audio>`)** | **`.player.html`: original audio, per-section key signature, score follows, current note/chord highlighted** |
 | Modulations | per-section key estimation | `song.modulations`, per-segment keys |
 | Progressions | n-gram mining | repeated progressions with Roman numerals |
 | Evaluation | mir_eval (05_eval.py) | root/majmin/triad/sevenths/mirex |

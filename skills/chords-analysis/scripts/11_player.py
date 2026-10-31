@@ -36,13 +36,13 @@ from pathlib import Path
 PX_PER_SEC = 70.0
 LEFT = 96
 TOP = 0
-SEC_H = 26
-CHORD_Y = 52
-TREBLE_TOP, TREBLE_BOT = 92, 128          # 五线,线距 9
-BASS_TOP, BASS_BOT = 186, 222
+SEC_H = 38
+CHORD_Y = 66
+TREBLE_TOP, TREBLE_BOT = 102, 138          # 五线,线距 9
+BASS_TOP, BASS_BOT = 196, 232
 SPACE = 9.0                                # 线距
 HALF = SPACE / 2.0
-HEIGHT = 300
+HEIGHT = 314
 PLAYHEAD_COLOR = "#e53935"
 
 SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -80,21 +80,38 @@ def key_scale(root, mode):
     return pcs
 
 
+def natural_scale(root, mode):
+    """自然音阶(小调不含和声导音)——调号用这个。"""
+    steps = (0, 2, 3, 5, 7, 8, 10) if mode == "minor" else (0, 2, 4, 5, 7, 9, 11)
+    return {(root + s) % 12 for s in steps}
+
+
 def key_signature(ks):
-    """调号 -> {letter: accidental}(该调里这个字母应奏的音)。"""
+    """调号 -> {letter: accidental}。
+
+    不能用"音级是否在音阶里"推,因为半音相邻时会有歧义(比如 D♭ 大调里
+    D 同时挨着 D♭ 和 E♭)。调号本质是五度圈:先求调在五度圈上的位置,
+    再按 ♯F C G D A E B / ♭B E A D G C F 的顺序落升降号。
+    """
     root, mode = parse_key(ks)
-    scale = key_scale(root, mode)
-    sig = {}
-    for letter, nat in NATURAL_PC.items():
-        if nat in scale:
-            sig[letter] = 0
-        elif (nat + 1) % 12 in scale:
+    if mode == "minor":
+        root = (root + 3) % 12          # 关系大调
+    fifths = {0: 0, 7: 1, 2: 2, 9: 3, 4: 4, 11: 5, 6: 6,
+              1: -5, 8: -4, 3: -3, 10: -2, 5: -1}
+    n = fifths[root]
+    sig = {letter: 0 for letter in NATURAL_PC}
+    if n > 0:
+        for letter in ("F", "C", "G", "D", "A", "E", "B")[:n]:
             sig[letter] = 1
-        elif (nat - 1) % 12 in scale:
+    elif n < 0:
+        for letter in ("B", "E", "A", "D", "G", "C", "F")[:-n]:
             sig[letter] = -1
-        else:
-            sig[letter] = 0
     return sig
+
+
+def is_flat_key(ks):
+    root, mode = parse_key(ks)
+    return root in (FLAT_MINOR_PCS if mode == "minor" else FLAT_MAJOR_PCS)
 
 
 def spell(midi, flats, sig):
@@ -189,12 +206,33 @@ def build_page(doc, voices, materials, struct, audio_rel, px):
     bass = ((voices.get("bass") or {}).get("notes") or [])
     mat = {round(s["start"], 2): s for s in (materials or {}).get("segments") or []}
 
-    global_flats = False
-    try:
-        root, mode = parse_key(song.get("key") or "C major")
-        global_flats = root in (FLAT_MINOR_PCS if mode == "minor" else FLAT_MAJOR_PCS)
-    except Exception:
-        global_flats = False
+    # 段落调性 -> 每个音符用"它所在段落"的调号,而不是全曲调号
+    key_regions = sorted(
+        [(float(s["start"]), s.get("key")) for s in segs if s.get("key")],
+        key=lambda kv: kv[0])
+    key_order = []
+    for _, k in key_regions:
+        if k not in key_order:
+            key_order.append(k)
+    sig_cache = {}
+
+    def sig_for(ks):
+        if ks not in sig_cache:
+            sig_cache[ks] = key_signature(ks)
+        return sig_cache[ks]
+
+    def key_at(t):
+        cur = song.get("key") or "C major"
+        for start, ks in key_regions:
+            if start <= t + 1e-6:
+                cur = ks
+            else:
+                break
+        return cur
+
+    # 调性 -> 色条颜色(按出现顺序分配)
+    KEY_COLORS = ["#1565c0", "#6a1b9a", "#00695c", "#ad1457", "#ef6c00", "#37474f"]
+    key_color = {k: KEY_COLORS[i % len(KEY_COLORS)] for i, k in enumerate(key_order)}
 
     def x(t):
         return LEFT + t * px
@@ -205,20 +243,27 @@ def build_page(doc, voices, materials, struct, audio_rel, px):
         f'font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="11">')
     add(f'<rect x="0" y="0" width="{width:.0f}" height="{HEIGHT}" fill="#ffffff"/>')
 
-    # 段落带
+    # 段落带(标签 · 材料 / 调式),左侧色条 = 调性
     for s in segs:
         a, b = float(s["start"]), float(s["end"])
         label = s.get("label") or s.get("name") or ""
         m = mat.get(round(a, 2), {}).get("material")
+        ks = s.get("key")
         ink = {"intro": "#e8eaf6", "inst": "#ede7f6", "verse": "#e3f2fd",
                "chorus": "#fff3e0", "bridge": "#f3e5f5", "solo": "#e8f5e9",
                "outro": "#fce4ec"}.get(label, "#f5f5f5")
         add(f'<rect x="{x(a):.1f}" y="0" width="{(b-a)*px:.1f}" height="{SEC_H}" fill="{ink}" '
             f'stroke="#cfd8dc"/>')
+        if ks:
+            add(f'<rect x="{x(a):.1f}" y="0" width="4" height="{SEC_H}" '
+                f'fill="{key_color.get(ks, "#90a4ae")}"/>')
         if (b - a) * px > 40:
-            add(f'<text x="{x(a)+4:.1f}" y="17" fill="#37474f" font-weight="600">'
+            add(f'<text x="{x(a)+8:.1f}" y="15" fill="#37474f" font-weight="600">'
                 f'{esc(label)}{" · " + esc(m) if m else ""}</text>')
-        add(f'<title>{esc(label)} {a:.1f}-{b:.1f}s {esc(s.get("key") or "")}</title>')
+            if ks:
+                add(f'<text x="{x(a)+8:.1f}" y="30" fill="#546e7a">'
+                    f'{esc(ks)}</text>')
+        add(f'<title>{esc(label)} {a:.1f}-{b:.1f}s {esc(ks or "")}</title>')
 
     # 小节线 / 拍点
     for t in downbeats:
@@ -239,16 +284,37 @@ def build_page(doc, voices, materials, struct, audio_rel, px):
     add(f'<text x="8" y="{TREBLE_TOP+4}" fill="#607d8b">旋律</text>')
     add(f'<text x="8" y="{BASS_TOP+4}" fill="#607d8b">低音</text>')
 
-    # 调号文字 + 段落调性变化
-    add(f'<text x="{LEFT+4}" y="{TREBLE_TOP-16}" fill="#37474f" font-weight="600">'
-        f'{esc(song.get("key") or "")}</text>')
-    prev_key = song.get("key")
-    for s in segs:
-        k = s.get("key")
-        if k and k != prev_key:
-            add(f'<text x="{x(float(s["start"]))+4:.1f}" y="{TREBLE_TOP-16}" fill="#455a64">'
-                f'{esc(k)}</text>')
-            prev_key = k
+    # 调号:每个调性变化的段落起头画调号符号 + 调名
+    SHARP_POS = {"treble": [77, 72, 79, 74, 69, 76, 71],
+                 "bass": [53, 48, 55, 50, 45, 52, 47]}
+    FLAT_POS = {"treble": [71, 76, 69, 74, 67, 72, 65],
+                "bass": [47, 52, 45, 50, 43, 48, 41]}
+    key_changes = []
+    prev = None
+    for start, k in key_regions:
+        if k != prev:
+            key_changes.append((start, k))
+            prev = k
+    if not key_changes:
+        key_changes = [(0.0, song.get("key") or "C major")]
+
+    for start, ks in key_changes:
+        gx = x(start) + 8
+        flats = is_flat_key(ks)
+        sig = sig_for(ks)
+        n_sh = sum(1 for v in sig.values() if v > 0)
+        n_fl = sum(1 for v in sig.values() if v < 0)
+        add(f'<text x="{gx:.1f}" y="{TREBLE_TOP-18}" fill="#37474f" font-weight="600">'
+            f'{esc(ks)}</text>')
+        for staff, pos in (("treble", SHARP_POS if n_sh else FLAT_POS),
+                           ("bass", SHARP_POS if n_sh else FLAT_POS)):
+            count = n_sh if n_sh else n_fl
+            for i in range(min(count, 7)):
+                midi = pos[staff][i]
+                step = spell(midi, flats, sig)[2]
+                gy = staff_y(step, staff) + 4
+                add(f'<text x="{gx + i * 7:.1f}" y="{gy:.1f}" fill="#455a64" '
+                    f'font-size="12">{("♯" if n_sh else "♭")}</text>')
 
     # 和弦符号
     for c in chords:
@@ -264,13 +330,14 @@ def build_page(doc, voices, materials, struct, audio_rel, px):
     # 音符:只画"音高 + 出现时刻"的散点。
     # 时值(符头/符尾)依赖转写出的音符长度,不可靠,所以不做任何节奏编码;
     # 横向间距本身就是节奏,悬停里给出测得的秒数(不是音符时值)。
-    def draw_notes(notes, staff, color, flats, base_sig):
-        sig = base_sig
+    def draw_notes(notes, staff, color):
         for n in notes:
             m = int(n["midi"])
-            letter, acc, step, show = spell(m, flats, sig)
-            y = staff_y(step, staff)
             a, b = float(n["start"]), float(n["end"])
+            ks = key_at(a)
+            flats = is_flat_key(ks)
+            letter, acc, step, show = spell(m, flats, sig_for(ks))
+            y = staff_y(step, staff)
             add(f'<g class="nt" data-s="{a:.3f}" data-e="{b:.3f}">')
             for ls in ledger_steps(step, staff):
                 ly = staff_y(ls, staff)
@@ -284,11 +351,10 @@ def build_page(doc, voices, materials, struct, audio_rel, px):
             if show:
                 add(f'<text x="{x(a)-12:.1f}" y="{y+4:.1f}" fill="{color}" font-size="11">'
                     f'{show}</text>')
-            add(f'<title>{esc(n.get("name") or m)} {a:.2f}s · 测得 {b-a:.2f}s</title></g>')
+            add(f'<title>{esc(n.get("name") or m)} {a:.2f}s · 测得 {b-a:.2f}s · {esc(ks)}</title></g>')
 
-    mel_sig = key_signature(song.get("key") or "C major")
-    draw_notes(melody, "treble", "#1a237e", global_flats, mel_sig)
-    draw_notes(bass, "bass", "#1b5e20", global_flats, mel_sig)
+    draw_notes(melody, "treble", "#1a237e")
+    draw_notes(bass, "bass", "#1b5e20")
 
     # 播放头
     add(f'<line id="ph" x1="{LEFT}" y1="0" x2="{LEFT}" y2="{HEIGHT}" stroke="{PLAYHEAD_COLOR}" '
@@ -340,7 +406,7 @@ def build_page(doc, voices, materials, struct, audio_rel, px):
 {audio_tag}
 {audio_note}
 <div class="wrap" id="wrap">{svg}</div>
-<div class="hint">点击谱面任意位置跳转 · 空格播放/暂停 · 红色=当前音/和弦 · 横轴间距即节奏,悬停显示测得秒数(不标音符时值) · 由识别结果直接绘制的散点谱,不是排版输出</div>
+<div class="hint">点击谱面任意位置跳转 · 空格播放/暂停 · 红色=当前音/和弦 · 段落带第二行=调式,左侧色条按调区分 · 谱上 ♯/♭ 是调号,只有调外音才单独标升降号 · 横轴间距即节奏,悬停显示测得秒数</div>
 <script>
 const au=document.getElementById('au'), wrap=document.getElementById('wrap');
 const ph=document.getElementById('ph'), dot=document.getElementById('phdot');
