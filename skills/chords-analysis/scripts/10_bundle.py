@@ -25,6 +25,7 @@ from urllib.parse import quote
 
 # 产物 -> (中文名, 说明, 优先级)
 ARTIFACTS = [
+    ("player.html", "跟随播放", "原曲 + 谱面 + 播放头", 1),
     ("review.html", "核对页", "段落/和弦/旋律/低音/鼓点并排", 1),
     ("lead.musicxml", "功能谱", "旋律 + 和弦符号 + 段落标记", 1),
     ("score.musicxml", "三声部总谱", "旋律 + 低音 + 生成和声", 1),
@@ -154,8 +155,7 @@ def render(tracks, title, outdir):
  body{{font-family:"Segoe UI","Microsoft YaHei",sans-serif;margin:24px;color:#263238;background:#fafafa}}
  h1{{font-size:20px;margin:0 0 6px}}
  .lead{{color:#546e7a;font-size:13px;line-height:1.7;margin-bottom:18px;max-width:900px}}
- .lead code{{background:#eceff1;padding:1px 5px;border-radius:3px}}
- .card{{background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:16px 18px;margin-bottom:16px}}
+ .lead code{{background:#eceff1;padding:1px 5px;border-radius:3px}} .card{{background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:16px 18px;margin-bottom:16px}}
  .card h2{{font-size:16px;margin:0 0 4px}}
  .sub{{color:#607d8b;font-size:12px;margin:0 0 10px}}
  .warn{{color:#e65100;font-size:11px}}
@@ -175,7 +175,8 @@ def render(tracks, title, outdir):
 </style></head><body>
 <h1>{esc(title)}</h1>
 <div class="lead">
- <b>先看核对页</b>：<code>.review.html</code> 把段落、和弦、旋律、低音、鼓点画在同一时间轴上，
+ <b>想边听边看</b>：<code>.player.html</code> 播放原曲，谱面跟随、播放头移动、当前音与和弦高亮。<br>
+ <b>想核对</b>：<code>.review.html</code> 把段落、和弦、旋律、低音、鼓点画在同一时间轴上，
  橙色=两引擎冲突，红色=被八度修正的音。<br>
  <b>要演奏</b>：<code>.lead.musicxml</code>（旋律+和弦符号）或 <code>.score.musicxml</code>
  （加低音与生成和声），<code>.score.mid</code> 带速度表，可直接进 DAW。<br>

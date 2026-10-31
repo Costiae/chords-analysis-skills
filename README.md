@@ -90,6 +90,7 @@ out/xxx.chords.json  ★ authoritative + xxx.lab (MIREX)
   │  scripts/07_sections.py   section materials from melody contour + chords, label × material
   │  scripts/08_score.py      MusicXML (lead sheet + 3-part) + tempo-mapped MIDI
   │  scripts/09_review.py     self-contained HTML review page (piano roll + chords + sections + drum onsets)
+  │  scripts/11_player.py     audio-following score player (original audio + moving playhead)
   │  scripts/10_bundle.py     out/index.html — one entry point linking every artifact
   ▼
 out/index.html · xxx.map.md · xxx.lead.musicxml · xxx.score.mid · xxx.review.html · xxx.analysis.md
@@ -113,6 +114,7 @@ out/index.html · xxx.map.md · xxx.lead.musicxml · xxx.score.mid · xxx.review
 | Section material | `07_sections.py` (transposition-invariant melody contour + chords) | material IDs, label × material matrix, pre-chorus |
 | **Score** | **`08_score.py` (downbeat grid + tempo curve + music21)** | **`.lead.musicxml`, `.score.musicxml`, tempo-mapped `.score.mid`** |
 | **Human review** | **`09_review.py` (SVG, no deps)** | **`.review.html`: sections + chords + melody + bass on one timeline** |
+| **Player** | **`11_player.py` (simplified staves + `<audio>`)** | **`.player.html`: original audio, score follows, current note/chord highlighted** |
 | Modulations | per-section key estimation | `song.modulations`, per-segment keys |
 | Progressions | n-gram mining | repeated progressions with Roman numerals |
 | Evaluation | mir_eval (05_eval.py) | root/majmin/triad/sevenths/mirex |

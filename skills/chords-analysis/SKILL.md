@@ -229,7 +229,19 @@ All remote weights go through `scripts/models.py` + `models/manifest.json`:
    (engine conflicts in orange), melody piano roll (octave-corrected notes in red),
    bass roll, bar grid and a section table. Self-contained — open it in any
    browser. Audit against this page before asserting anything about a passage.
-4g. **Bundle** (one entry point for humans and agents):
+4g. **Audio-following score player** (play the original, score follows):
+   ```
+   <PY> -W ignore <skill-dir>/scripts/11_player.py out/<name>.chords.json --outdir out
+   ```
+   Writes `<name>.player.html` plus a 96k AAC preview in `out/audio/` (ffmpeg;
+   falls back to referencing the source file). The page draws the melody and bass
+   on simplified staves, with bar/beat grid, key changes, chord symbols and
+   section bands, all positioned by **seconds** so they stay in sync with audio.
+   A red playhead moves with playback, the current notes and chord highlight, the
+   view auto-scrolls, and clicking the score seeks. Space toggles play/pause.
+   This is a readable score, not an engraving: stems are not beamed, rests are
+   omitted, and notes are drawn from the recognition data.
+4h. **Bundle** (one entry point for humans and agents):
    ```
    <PY> -W ignore <skill-dir>/scripts/10_bundle.py --outdir out
    ```

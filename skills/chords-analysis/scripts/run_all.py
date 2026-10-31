@@ -17,6 +17,7 @@
   07_sections     乐段材料(旋律轮廓)+ 标签对照
   08_score        功能谱/总谱 MusicXML + 带速度表的 MIDI
   09_review       人工核对页(HTML)
+  11_player       跟随播放的谱面(HTML + 音频预览)
   10_bundle       汇总入口页(out/index.html)
 """
 import argparse, json, subprocess, sys
@@ -72,7 +73,7 @@ def main():
     ap.add_argument("input")
     ap.add_argument("--outdir", default="out")
     ap.add_argument("--skip", default="",
-                    help="逗号分隔,可含 stems/transcribe/quality/map/keys/materials/score/review")
+                    help="逗号分隔,可含 stems/transcribe/quality/map/keys/materials/score/review/player/bundle")
     args = ap.parse_args()
     skip = {s.strip() for s in args.skip.split(",") if s.strip()}
 
@@ -138,6 +139,11 @@ def main():
         if "review" not in skip:
             layers["review"] = run("09_review (HTML)", [
                 str(SCRIPTS / "09_review.py"),
+                str(Path(args.outdir) / f"{stem}.chords.json"),
+                "--outdir", args.outdir])
+        if "player" not in skip:
+            layers["player"] = run("11_player (audio-following score)", [
+                str(SCRIPTS / "11_player.py"),
                 str(Path(args.outdir) / f"{stem}.chords.json"),
                 "--outdir", args.outdir])
 

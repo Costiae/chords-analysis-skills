@@ -255,6 +255,19 @@
 和弦轨(冲突橙色)、旋律 piano-roll(八度修正红色)、低音 roll;下方是乐段表。
 用于人工抽查,也是"AI 错了人还能看"的兜底。
 
+## 跟随播放页（`<name>.player.html`）
+
+播放原曲,谱面跟着走。不依赖 MusicXML 渲染库,直接用 `chords.json` / `voices.json`
+的音符画简化五线谱:
+
+- 五线谱线、小节/拍点、变音记号、符干、加线;上方和弦符号与段落带;
+- 音符按**秒**定位,所以与音频严格同步(不使用量化后的位置);
+- 红色播放头、当前音/和弦高亮、视口自动跟随;点击谱面跳转,空格播放/暂停;
+- 音频为 `out/audio/<name>.m4a`(96k 单声道,ffmpeg 生成)。
+
+**这是可读谱,不是排版成品**:符杠未连、休止符省略、音符来自识别结果。
+需要正式谱面时用 `.lead.musicxml` / `.score.musicxml`。
+
 ## 衍生文件
 
 | File | Content |
@@ -272,6 +285,8 @@
 | `<name>.lead.musicxml` / `.score.musicxml` | lead sheet / three-part skeleton (melody + bass + generated harmony) |
 | `<name>.score.mid` | tempo-mapped MIDI (bar-aligned, importable into a DAW) |
 | `<name>.review.html` | **human review page**: sections + chords + melody + bass (+ drum onsets) on one timeline |
+| `<name>.player.html` | **audio-following player**: original audio + simplified score + moving playhead |
+| `audio/<name>.m4a` | 96k mono preview used by the player (generated with ffmpeg) |
 | `index.html` | **bundle**: per-track cards, score checks and links to every artifact |
 | `<name>.chords.eval.json` | evaluation scores vs a reference annotation (05_eval.py) |
 | `<name>.analysis.md` | LLM analysis report |
