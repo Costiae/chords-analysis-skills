@@ -88,8 +88,10 @@ out/xxx.chords.json  ★ authoritative + xxx.lab (MIREX)
   │  scripts/05_eval.py        mir_eval regression vs reference annotation
   │  scripts/06_local_keys.py  section-key audit: coverage gaps + tonicization directions
   │  scripts/07_sections.py   section materials from melody contour + chords, label × material
+  │  scripts/08_score.py      MusicXML (lead sheet + 3-part) + tempo-mapped MIDI
+  │  scripts/09_review.py     self-contained HTML review page (piano roll + chords + sections)
   ▼
-out/xxx.map.md · xxx.midi · xxx.analysis.md
+out/xxx.map.md · xxx.lead.musicxml · xxx.score.midi · xxx.review.html · xxx.analysis.md
 ```
 
 ## What a complete analysis covers
@@ -108,15 +110,43 @@ out/xxx.map.md · xxx.midi · xxx.analysis.md
 | Key / mode | chords + melody + phrase anchors + **section-scoped** key, coverage-checked | per-section tonic, gaps where it fails |
 | Tonicization | `06_local_keys.py` (dominant → target resolutions) | direction (V/vi, V/III…), duration |
 | Section material | `07_sections.py` (transposition-invariant melody contour + chords) | material IDs, label × material matrix, pre-chorus |
+| **Score** | **`08_score.py` (downbeat grid + tempo curve + music21)** | **`.lead.musicxml`, `.score.musicxml`, tempo-mapped `.score.mid`** |
+| **Human review** | **`09_review.py` (SVG, no deps)** | **`.review.html`: sections + chords + melody + bass on one timeline** |
 | Modulations | per-section key estimation | `song.modulations`, per-segment keys |
 | Progressions | n-gram mining | repeated progressions with Roman numerals |
 | Evaluation | mir_eval (05_eval.py) | root/majmin/triad/sevenths/mirex |
 
-Honest gaps (not yet automated): instrument identification beyond the four
-demucs stems, and dense polyphonic transcription (piano/orchestral textures —
-Basic Pitch is monophonic-leaning and best on vocals/guitar; piano needs a
-dedicated model). Tempo curves are derived from beat intervals, so extreme rubato
-is approximated.
+## What the score is, and what it is not
+
+The export is a **review score**: it is built from the analysis, not from a
+dedicated score model, and it says so in the part names.
+
+- Melody and bass are quantized to 16ths on the downbeat grid, with a real tempo
+  map; measures are padded to one bar, so it opens correctly in MuseScore/DAW.
+- The melody is single-voice, folded into C3–C6 and octave-corrected; corrected
+  notes are red in `<name>.review.html`.
+- The `Harmony (generated from symbols)` staff is **generated from chord symbols**,
+  not transcribed from audio. It exists so the score is playable, not as evidence.
+- Not transcribed: drums, piano/guitar voicing (which notes, which position),
+  performance techniques, lyrics. Tab export is therefore not meaningful yet.
+
+Honest gaps: instrument identification beyond the four demucs stems, dense
+polyphonic transcription, and — most importantly — **no ground-truth
+annotation**. `05_eval.py`'s 1.0000 is self-consistency; engine agreement
+(75–77%) is not accuracy.
+
+## Next: multi-instrument transcription (separate environment)
+
+The current stack is pinned to Python 3.9 because of madmom. The strongest
+open multi-instrument option, **YourMT3+** (MT3 family, 8-stem separation,
+~536 MB weights, CPU-capable), requires **Python ≥ 3.10** — so it cannot live in
+`.venv39`. `openmirlab/mt3-infer` wraps YourMT3/MR-MT3/MT3-PyTorch behind one
+`transcribe()` API. The intended path is a second environment (`.venv311`) used
+only for transcription, writing the same `transcription.json` shape, so the rest
+of the pipeline (score, review page, analysis) is unchanged.
+
+That is what would move the score from "review-grade" to "piano/drum parts
+usable"; it does not remove the need for human annotation.
 
 ## Reproducibility
 

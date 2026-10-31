@@ -24,6 +24,10 @@ mir_eval==0.8.2
 # transcription (扒谱)
 basic-pitch==0.4.0
 
+# score export (MusicXML + tempo-mapped MIDI). 9.x requires Python >= 3.10,
+# so on the Python 3.9 runtime the last usable release is 8.3.0.
+music21==8.3.0
+
 # structure / beats / segments (pure-pytorch allin1 fork, pinned commit)
 torch==2.8.0
 all-in-one-infer @ git+https://github.com/openmirlab/all-in-one-infer.git@566f96c3f007c783ab5eb6db0123bf3335af8f31

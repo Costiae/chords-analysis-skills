@@ -13,6 +13,10 @@
   02_format       融合为 chords-v1
   03_summarize    摘要
   04_map          和声地图
+  06_local_keys   段级 key 覆盖率缺口 + 离调
+  07_sections     乐段材料(旋律轮廓)+ 标签对照
+  08_score        功能谱/总谱 MusicXML + 带速度表的 MIDI
+  09_review       人工核对页(HTML)
 """
 import argparse, json, subprocess, sys
 from pathlib import Path
@@ -41,7 +45,8 @@ def preflight():
         ok = False
     checks = [("madmom", "chords"), ("librosa", "audio io"),
               ("allin1_infer", "structure"), ("transformers", "BTC-170"),
-              ("basic_pitch", "transcription"), ("mir_eval", "evaluation")]
+              ("basic_pitch", "transcription"), ("mir_eval", "evaluation"),
+              ("music21", "score export / MusicXML")]
     for mod, purpose in checks:
         try:
             __import__(mod)
@@ -66,7 +71,7 @@ def main():
     ap.add_argument("input")
     ap.add_argument("--outdir", default="out")
     ap.add_argument("--skip", default="",
-                    help="逗号分隔,可含 stems/transcribe/quality/map")
+                    help="逗号分隔,可含 stems/transcribe/quality/map/keys/materials/score/review")
     args = ap.parse_args()
     skip = {s.strip() for s in args.skip.split(",") if s.strip()}
 
@@ -112,6 +117,26 @@ def main():
         if "map" not in skip:
             layers["map"] = run("04_map", [
                 str(SCRIPTS / "04_map.py"),
+                str(Path(args.outdir) / f"{stem}.chords.json"),
+                "--outdir", args.outdir])
+        if "keys" not in skip:
+            layers["local_keys"] = run("06_local_keys", [
+                str(SCRIPTS / "06_local_keys.py"),
+                str(Path(args.outdir) / f"{stem}.chords.json"),
+                "--outdir", args.outdir])
+        if "materials" not in skip:
+            layers["materials"] = run("07_sections", [
+                str(SCRIPTS / "07_sections.py"),
+                str(Path(args.outdir) / f"{stem}.chords.json"),
+                "--outdir", args.outdir])
+        if "score" not in skip:
+            layers["score"] = run("08_score (MusicXML)", [
+                str(SCRIPTS / "08_score.py"),
+                str(Path(args.outdir) / f"{stem}.chords.json"),
+                "--outdir", args.outdir])
+        if "review" not in skip:
+            layers["review"] = run("09_review (HTML)", [
+                str(SCRIPTS / "09_review.py"),
                 str(Path(args.outdir) / f"{stem}.chords.json"),
                 "--outdir", args.outdir])
 

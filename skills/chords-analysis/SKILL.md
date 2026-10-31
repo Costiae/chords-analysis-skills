@@ -207,6 +207,28 @@ All remote weights go through `scripts/models.py` + `models/manifest.json`:
    sat at 0.85+ even between verse and chorus, while contour reached 0.99 for
    repeated choruses and went negative across different materials. Melody from
    pyin can carry octave errors, so a single low score is a hint, not proof.
+4e. **Score export** (MusicXML + tempo-mapped MIDI):
+   ```
+   <PY> -W ignore <skill-dir>/scripts/08_score.py out/<name>.chords.json --outdir out
+   ```
+   Reads the real downbeat list and tempo curve from `<name>.struct.json`
+   (`chords.json` only stores the downbeat count), quantizes to 16ths and writes:
+   - `<name>.lead.musicxml` — melody + chord symbols + rehearsal marks + key changes;
+   - `<name>.score.musicxml` — melody + bass + harmony **generated from chord
+     symbols** (the part name says `generated`; it is not audio transcription);
+   - `<name>.score.mid` — with tempo map and time signature, importable into a DAW.
+   Measures are padded to exactly one bar; the score starts at the first downbeat
+   (audio before it is not notated). Melody is folded into C3–C6 and octave-
+   corrected. Requires `music21` (8.3.0 is the last release supporting Python
+   3.9); the step skips cleanly without it.
+4f. **Human review page** (the "AI got it wrong, a human can check" artifact):
+   ```
+   <PY> -W ignore <skill-dir>/scripts/09_review.py out/<name>.chords.json --outdir out
+   ```
+   Writes `<name>.review.html`: section bands (label · material · key), chord lane
+   (engine conflicts in orange), melody piano roll (octave-corrected notes in red),
+   bass roll, bar grid and a section table. Self-contained — open it in any
+   browser. Audit against this page before asserting anything about a passage.
 5. **Analyze / answer**: read `out/<name>.chords.json` (for long songs read `stats`
    first, then read `chords` in slices as needed), then answer or write a report to
    `out/<name>.analysis.md` following the "LLM analysis conventions" in
@@ -248,6 +270,11 @@ All remote weights go through `scripts/models.py` + `models/manifest.json`:
 - **Pre-chorus** is only a pre-chorus if it is short, ends on a dominant function
   and has its own material. A full-length verse that happens to end on V is a
   verse; say so.
+- **Do not claim transcription accuracy the pipeline cannot support.** The
+  score is a review artifact: melody is single-voice and octave-corrected, the
+  harmony staff is generated from chord symbols, drums and piano voicings are not
+  transcribed. Say what the artifact is (lead sheet / review score), and point at
+  `<name>.review.html` and the corrected notes in it.
 - **Progressions**: prefer `04_map.py` output (`<name>.map.md`) — it already has
   the bar grid, Roman numerals and mined repeated n-grams. Do not re-derive the
   map by hand from raw chords.

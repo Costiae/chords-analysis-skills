@@ -217,6 +217,34 @@
 - 旋律来自 pyin,八度错误会污染轮廓。单段低分只作为线索,不要当成"不是同一材料"的证明。
 - 没有独立前副歌时报告"无",不要把一个收在 V 的满长度 verse 写成 Pre-Chorus。
 
+## score-v1（`<name>.score.json` + MusicXML/MIDI）
+
+`08_score.py` 把音符落到小节网格上。**这不是"转写精度"的声明**,而是把已有证据
+整理成可演奏/可核对的谱。
+
+| 文件 | 内容 |
+|---|---|
+| `<name>.lead.musicxml` | 主旋律 + 和弦符号 + 段落排练号 + 调性变化(功能谱) |
+| `<name>.score.musicxml` | 主旋律 + 低音 + **由和弦符号生成**的和声声部 |
+| `<name>.score.mid` | 带 tempo map / 拍号的 MIDI(可导入 DAW) |
+| `<name>.score.json` | `{bars, meter, quantization, parts, files}` |
+
+约定:
+
+- 网格来自 `struct.json` 的 `downbeats` + `tempo_curve`(不是 `chords.json` 里的数量)。
+- 量化到 16 分音符(`quantization: "1/16 note (4/quarter)"`);跨小节音自动拆分并加连音线。
+- **谱从第一个下拍开始**;之前的音频不记谱。`La priere` 的第一个下拍在 6.28s,所以谱从 6.28s 起。
+- 旋律被折返到 C3–C6 并做八度连续性修正;被修正的音在 review 页标红。
+- 和声声部是**由和弦符号生成**的(声部名 `Harmony (generated from symbols)`),
+  不是从音频里听出来的——不要把它当转写结果引用。
+- 鼓、钢琴 voicing、演奏技法没有转写;需要这些要换模型(见 README 的 roadmap)。
+
+## 人工核对页（`<name>.review.html`）
+
+单文件 HTML/SVG,无依赖。四层并排:段落带(标签·材料·调)、和弦轨(冲突橙色)、
+旋律 piano-roll(八度修正红色)、低音 roll;下方是乐段表。用于人工抽查,也是
+"AI 错了人还能看"的兜底。
+
 ## 衍生文件
 
 | File | Content |
@@ -231,6 +259,9 @@
 | `<name>.map.md` | **harmonic map**: bar grid + Roman numerals + section progressions + n-grams |
 | `<name>.localkeys.md` | **section-key audit**: coverage gaps (where the section key fails) + tonicization events with direction |
 | `<name>.materials.md` | **section materials**: melody-contour clusters, label × material matrix, pre-chorus candidates |
+| `<name>.lead.musicxml` / `.score.musicxml` | lead sheet / three-part skeleton (melody + bass + generated harmony) |
+| `<name>.score.mid` | tempo-mapped MIDI (bar-aligned, importable into a DAW) |
+| `<name>.review.html` | **human review page**: sections + chords + melody + bass on one timeline |
 | `<name>.chords.eval.json` | evaluation scores vs a reference annotation (05_eval.py) |
 | `<name>.analysis.md` | LLM analysis report |
 
