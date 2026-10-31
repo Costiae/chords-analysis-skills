@@ -239,6 +239,9 @@ All remote weights go through `scripts/models.py` + `models/manifest.json`:
    section bands, all positioned by **seconds** so they stay in sync with audio.
    A red playhead moves with playback, the current notes and chord highlight, the
    view auto-scrolls, and clicking the score seeks. Space toggles play/pause.
+   Note values are readable: hollow heads = half/whole, filled = quarter or
+   shorter, flags = eighth/16th, and a faint line after the head shows the held
+   length; heads carry a white halo so they separate from the staff lines.
    This is a readable score, not an engraving: stems are not beamed, rests are
    omitted, and notes are drawn from the recognition data.
 4h. **Bundle** (one entry point for humans and agents):

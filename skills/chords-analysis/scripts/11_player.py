@@ -11,6 +11,9 @@ review 页是"横向总览 + 人工核对";这一页是**跟随播放的谱面**
 没有用 MusicXML 渲染库(需要联网/CDN,且排版引擎对量化错误很敏感),
 而是**直接用 chords.json / voices.json 里的音符画简化五线谱**:
   - 五线谱线、小节线、拍点、变音记号、符干、加线
+  - **时值可读**:空心符头=二分/全音符,实心=四分及更短,符尾=八分/十六分,
+    符头右侧一条淡横线表示时值长度
+  - **符头白色描边**,把音符从谱线里分离出来
   - 上方和弦符号 + 段落带(标签·材料·调)
   - 音符位置来自 seconds,所以和音频严格同步(不依赖量化)
 这是"可读的谱面",不是排版成品。
@@ -232,7 +235,7 @@ def build_page(doc, voices, materials, struct, audio_rel, px):
         for i in range(5):
             y = top + i * SPACE
             add(f'<line x1="{LEFT}" y1="{y}" x2="{x(duration):.1f}" y2="{y}" '
-                f'stroke="#90a4ae" stroke-width="1"/>')
+                f'stroke="#b0bec5" stroke-width="1"/>')
     add(f'<text x="8" y="{TREBLE_TOP+4}" fill="#607d8b">旋律</text>')
     add(f'<text x="8" y="{BASS_TOP+4}" fill="#607d8b">低音</text>')
 
@@ -259,32 +262,70 @@ def build_page(doc, voices, materials, struct, audio_rel, px):
             f'<title>{esc(c["label"])} {a:.1f}s bar {c.get("bar") or "-"}</title></g>')
 
     # 音符
+    curve = st.get("tempo_curve") or []
+    bpm0 = float(st.get("bpm") or 120.0)
+
+    def beat_sec_at(t):
+        if curve:
+            near = min(curve, key=lambda x: abs(float(x["time"]) - t))
+            return 60.0 / max(float(near["bpm"]), 1e-6)
+        return 60.0 / max(bpm0, 1e-6)
+
+    def note_value(beats):
+        if beats >= 3.5:
+            return "whole", "全音符"
+        if beats >= 1.75:
+            return "half", "二分音符"
+        if beats >= 0.875:
+            return "quarter", "四分音符"
+        if beats >= 0.4375:
+            return "eighth", "八分音符"
+        return "16th", "十六分音符"
+
     def draw_notes(notes, staff, color, flats, base_sig):
         sig = base_sig
-        cur_key = None
         for n in notes:
             m = int(n["midi"])
             letter, acc, step, show = spell(m, flats, sig)
             y = staff_y(step, staff)
             a, b = float(n["start"]), float(n["end"])
+            beats = (b - a) / max(beat_sec_at(a), 1e-6)
+            val, val_cn = note_value(beats)
+            hollow = val in ("whole", "half")
             stem_up = y > (TREBLE_TOP + TREBLE_BOT) / 2 if staff == "treble" else y > (BASS_TOP + BASS_BOT) / 2
-            add(f'<g class="nt" data-s="{a:.3f}" data-e="{b:.3f}">')
+            add(f'<g class="nt {"hollow" if hollow else ""}" data-s="{a:.3f}" data-e="{b:.3f}">')
             for ls in ledger_steps(step, staff):
                 ly = staff_y(ls, staff)
-                add(f'<line x1="{x(a)-7:.1f}" y1="{ly:.1f}" x2="{x(a)+7:.1f}" y2="{ly:.1f}" '
-                    f'stroke="#78909c" stroke-width="1"/>')
-            add(f'<ellipse cx="{x(a):.1f}" cy="{y:.1f}" rx="4.6" ry="3.4" fill="{color}" '
+                add(f'<line x1="{x(a)-8:.1f}" y1="{ly:.1f}" x2="{x(a)+8:.1f}" y2="{ly:.1f}" '
+                    f'stroke="#b0bec5" stroke-width="1"/>')
+            # 时值横线:把"这个音持续多久"直接画出来
+            dur_px = (b - a) * px
+            if dur_px > 8:
+                add(f'<line x1="{x(a)+5.5:.1f}" y1="{y:.1f}" x2="{x(b):.1f}" y2="{y:.1f}" '
+                    f'stroke="{color}" stroke-width="2" opacity="0.22"/>')
+            # 白色描边光晕:让符头从谱线里"浮"出来
+            add(f'<ellipse class="halo" cx="{x(a):.1f}" cy="{y:.1f}" rx="6.4" ry="5.0" '
+                f'fill="#fff" transform="rotate(-18 {x(a):.1f} {y:.1f})"/>')
+            fill = "#fff" if hollow else color
+            add(f'<ellipse class="head" cx="{x(a):.1f}" cy="{y:.1f}" rx="5.2" ry="3.8" '
+                f'fill="{fill}" stroke="{color}" stroke-width="1.5" '
                 f'transform="rotate(-18 {x(a):.1f} {y:.1f})"/>')
-            if stem_up:
-                add(f'<line x1="{x(a)+4.2:.1f}" y1="{y:.1f}" x2="{x(a)+4.2:.1f}" y2="{y-22:.1f}" '
-                    f'stroke="{color}" stroke-width="1.3"/>')
-            else:
-                add(f'<line x1="{x(a)-4.2:.1f}" y1="{y:.1f}" x2="{x(a)-4.2:.1f}" y2="{y+22:.1f}" '
-                    f'stroke="{color}" stroke-width="1.3"/>')
+            if val != "whole":
+                sx = x(a) + 4.9 if stem_up else x(a) - 4.9
+                sy = y - 24 if stem_up else y + 24
+                add(f'<line x1="{x(a)+(4.9 if stem_up else -4.9):.1f}" y1="{y:.1f}" '
+                    f'x2="{sx:.1f}" y2="{sy:.1f}" stroke="{color}" stroke-width="1.4"/>')
+                # 符尾:八分 1 条,十六分 2 条
+                if val in ("eighth", "16th"):
+                    for k in range(1 if val == "eighth" else 2):
+                        oy = sy + (0 if stem_up else 0) + (6 * k if stem_up else -6 * k)
+                        add(f'<path d="M {sx:.1f} {oy:.1f} q 7 {-4 if stem_up else 4} '
+                            f'{7 if stem_up else -7} {12 if stem_up else -12}" fill="none" '
+                            f'stroke="{color}" stroke-width="1.6"/>')
             if show:
-                add(f'<text x="{x(a)-11:.1f}" y="{y+3.5:.1f}" fill="{color}" font-size="11">'
+                add(f'<text x="{x(a)-12:.1f}" y="{y+4:.1f}" fill="{color}" font-size="11">'
                     f'{show}</text>')
-            add(f'<title>{esc(n.get("name") or m)} {a:.2f}s</title></g>')
+            add(f'<title>{esc(n.get("name") or m)} {a:.2f}s · {val_cn} ({b-a:.2f}s)</title></g>')
 
     mel_sig = key_signature(song.get("key") or "C major")
     draw_notes(melody, "treble", "#1a237e", global_flats, mel_sig)
@@ -320,10 +361,11 @@ def build_page(doc, voices, materials, struct, audio_rel, px):
  .wrap{{overflow-x:auto;overflow-y:hidden;border-bottom:1px solid #e0e0e0;background:#fff;
    cursor:pointer}}
  .hint{{font-size:11px;color:#90a4ae;padding:6px 14px}}
- #score .nt{{opacity:.55}}
+ #score .nt{{opacity:.62}}
  #score .nt.on{{opacity:1}}
- #score .nt.on ellipse{{fill:#e53935}}
- #score .nt.on line{{stroke:#e53935}}
+ #score .nt.on .head{{fill:#e53935;stroke:#e53935}}
+ #score .nt.hollow.on .head{{fill:#fff;stroke:#e53935}}
+ #score .nt.on line,#score .nt.on path{{stroke:#e53935}}
  #score .ch{{opacity:.45}}
  #score .ch.cur{{opacity:1}}
  #score .ch.cur text{{fill:#e53935}}
@@ -341,7 +383,7 @@ def build_page(doc, voices, materials, struct, audio_rel, px):
 {audio_tag}
 {audio_note}
 <div class="wrap" id="wrap">{svg}</div>
-<div class="hint">点击谱面任意位置跳转 · 空格播放/暂停 · 红色=当前音/和弦 · 这是由识别结果直接绘制的简化谱,不是排版引擎输出</div>
+<div class="hint">点击谱面任意位置跳转 · 空格播放/暂停 · 红色=当前音/和弦 · 空心符头=二分/全音符,实心=四分及更短,符尾=八分/十六分,符头右侧横线=时值长度 · 这是由识别结果直接绘制的简化谱,不是排版引擎输出</div>
 <script>
 const au=document.getElementById('au'), wrap=document.getElementById('wrap');
 const ph=document.getElementById('ph'), dot=document.getElementById('phdot');
