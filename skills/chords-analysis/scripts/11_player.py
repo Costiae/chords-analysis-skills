@@ -223,18 +223,34 @@ def build_page(doc, voices, materials, struct, audio_rel, px, localkeys=None):
         return None
 
     intra = {}          # 段起点 -> [(pivot, alt_key)]
+    # 同一段里可能有多个重叠的缺口(窗口互相覆盖),只保留覆盖率最高的那条,
+    # 否则播放器会同时画出 C# minor→G minor 和 Ab minor→C major 两条互相矛盾的换调。
+    candidates = []
     for br in (localkeys or {}).get("breaks") or []:
         if br.get("relation") != "departure" or not br.get("alt_reliable"):
             continue
+        candidates.append(br)
+    candidates.sort(key=lambda b: -float(b.get("alt_coverage") or 0))
+    accepted = []
+    for br in candidates:
+        s, e = float(br["start"]), float(br["end"])
+        if any(not (e <= float(a["start"]) or s >= float(a["end"])) for a in accepted):
+            continue
+        accepted.append(br)
+    for br in accepted:
         pivot = float(br.get("worst_start") or br["start"])
         alt = br.get("alt_key")
         sec = section_at(pivot)
         if not sec or not alt:
             continue
+        # 离下一段边界太近的"段内换调"没有意义:段级 key 立刻会覆盖它
+        nxt = next((s for s in segs if float(s["start"]) > pivot + 1e-6), None)
+        if nxt and float(nxt["start"]) - pivot < 6.0:
+            continue
         key_regions.append((pivot, alt, "intra"))
         intra.setdefault(round(float(sec["start"]), 2), []).append((pivot, alt))
-        # 缺口在段结束前就结束时,恢复段级 key
-        if float(br["end"]) < float(sec["end"]) - 0.5 and sec.get("key"):
+        # 缺口在段结束前就结束、且剩余足够长时才恢复段级 key
+        if (float(br["end"]) < float(sec["end"]) - 6.0 and sec.get("key")):
             key_regions.append((float(br["end"]), sec["key"], "restore"))
     key_regions.sort(key=lambda kv: kv[0])
 
