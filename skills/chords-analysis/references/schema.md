@@ -60,6 +60,10 @@
   `key_source` 取值:`estimated`(本段独立判定)、`stable`(与相邻段同调,
   防止关系调摇摆)、`inherited`(段太短/证据不足,沿用上一可信段)。
   **乐段划分以此为准,engine 非 allin1 时无段落标签。**
+- `song.key`: **时长加权的摘要,不是分析单位**。分析必须以
+  `structure.segments[].key`(乐段级)为起点;`key_by_section` 给出各调的
+  累计时长。`key_ambiguous: true` 表示前两名分差过小。
+  段级 key 也可能是平均值——用 `06_local_keys.py` 的覆盖率缺口核验。
 - `song.key_candidates` / `segments[].key_candidates`:调性候选。`score` 为
   `0.55×Krumhansl 相关 + 0.45×调内覆盖率 + 终止音证据`,同时给出
   `diatonic`(和弦音落在该调内的时长加权比例)与 `tonic_evidence`
@@ -126,6 +130,48 @@
 - `chroma_agreement` 只用于**比较同一段音频上不同提取方法**的可信度,
   不能当成 mir_eval 精度分数。低于 0.6 时应在分析报告中提示低音线索可能不可靠。
 
+## localkeys-v1 (`<name>.localkeys.md` / `.json`)
+
+`06_local_keys.py` 的输出,用于回答"段级 key 在这里还成立吗、段内有没有离调"。
+
+```json
+{
+  "schema": "localkeys-v1",
+  "window": 10.0, "hop": 4.0, "threshold": 0.8,
+  "breaks": [
+    {"start": 128.0, "end": 154.0, "section": "chorus",
+     "section_key": "Bb major", "coverage": 0.28,
+     "worst_start": 136.0, "worst_coverage": 0.28,
+     "alt_key": "A major", "alt_coverage": 0.99,
+     "gain": 0.71, "relation": "departure", "alt_reliable": true}
+  ],
+  "events": [
+    {"time": 64.3, "section": "chorus", "section_key": "A major",
+     "degree": "VI", "target_key": "F# minor", "strength": "strong",
+     "back_to_tonic": 1.6, "kind": "tonicization", "in_break": false}
+  ]
+}
+```
+
+字段约定:
+
+| Field | Meaning |
+|---|---|
+| `breaks[].coverage` | 段级 key 在该区间的最差窗口覆盖率(和弦音落在调内的时长比例) |
+| `breaks[].worst_start` | 覆盖率最低的窗口起点,比区间端点更接近真实转折 |
+| `breaks[].relation` | `departure`(音集不同,真的换调)/ `relative`(相对大小调,同音集,不算换调) |
+| `breaks[].alt_reliable` | 替代调的覆盖率是否也 ≥ threshold;为 false 时表示"过渡/半音段落,无稳定主音" |
+| `events[].degree` | 目标相对**段级** key 的级数(V/vi 的目标记作 VI) |
+| `events[].strength` | `strong` = 属七或该级本应小三/减三却出现大三(副属);`weak` 需结合上下文 |
+| `events[].back_to_tonic` | 目标之后第一次回到段级主音根音的秒数,用于区分离调与转调 |
+| `events[].kind` | `tonicization`(≤4s 回主音)/ `prolonged` / `modulation`(与下一段 key 一致) |
+| `events[].in_break` | 该事件落在覆盖率缺口内,段级 key 已失效,需对照 `local_hint` 读 |
+
+**解读规则**:`breaks` 只说明"段级 key 在这里解释不了和弦",不直接等于转调;
+`relation: relative` 表示音集相同(相对大小调),合唱/听感层面可能切换了重心,
+但和弦数据无法判定,不要写成"转调"。`events` 的级数一律相对段级 key,
+不要把 `in_break` 事件的级数当成局部调的级数。
+
 ## 衍生文件
 
 | File | Content |
@@ -138,18 +184,26 @@
 | `<name>.midi`, `<name>.<stem>.midi` | transcription MIDI (combined + per stem) |
 | `<name>.lab` | MIREX .lab time tags (Sonic Visualiser, mir_eval) |
 | `<name>.map.md` | **harmonic map**: bar grid + Roman numerals + section progressions + n-grams |
+| `<name>.localkeys.md` | **section-key audit**: coverage gaps (where the section key fails) + tonicization events with direction |
 | `<name>.chords.eval.json` | evaluation scores vs a reference annotation (05_eval.py) |
 | `<name>.analysis.md` | LLM analysis report |
 
 ## LLM 分析约定
 
 - 分析/回答一律基于 `chords` 数组,按 `start` 升序。
+- **调性以乐段为单位,全曲 `song.key` 只是时长摘要**。报告不要用"这首歌是 X 调"
+  开头;先逐段定主音,再说每段如何偏离。段级 key 也可能是两个调的平均值——
+  用 `<name>.localkeys.md` 的覆盖率缺口核验,`key_source: stable` 是继承值,
+  不是本段独立判定。
+- **离调(tonicization)与转调(modulation)要分开说**:短时把某级当主音、随后
+  回到段级主音是离调;主音持续并进入下一段才是转调。给出方向(向 vi、向 III…)
+  和持续时间。`localkeys` 的 `degree` 一律相对段级 key,不要混用局部调的级数。
 - **乐段划分必须来自 `structure.segments`(结构分析模型输出),禁止靠和弦走势猜乐段**;
   若 `structure` 缺失或 `engine` 为 `madmom-beats`,明确说明"无段落标签,以下分段为
   依据和声变化的推测"并在报告开头标注。段内和声归纳才属于 LLM 的工作。
 - **准确性优先于完整性**:识别层给出的和弦是"证据"而非"真相"。与音乐常识冲突时
   (如某和弦与前后文毫无功能联系),明确说"此处识别可能有误",不要强行解释。
 - `confidence: "conflict"` 的和弦,引用时必须附带"两引擎分歧"提示。
-- 报告应包含:调性判断与依据、进行模式(如 4536251、卡农进行)、段落和声对比、
-  转调/离调点、终止式、节奏与和声密度;末尾附"低置信度段落清单"。
+- 报告应包含:逐段调性、段内离调方向、进行模式(如 4536251、卡农进行)、
+  段落和声对比、转调点、终止式、节奏与和声密度;末尾附"低置信度段落清单"。
 - 引用具体和弦时附带时间戳,如 `2:35 (155.0s) A:min → D:7`。

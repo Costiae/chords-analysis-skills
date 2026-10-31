@@ -86,6 +86,7 @@ out/xxx.chords.json  ★ authoritative + xxx.lab (MIREX)
   │  scripts/03_summarize.py   timeline + harmonic rhythm
   │  scripts/04_map.py         harmonic map (bar grid, Roman numerals, n-grams)
   │  scripts/05_eval.py        mir_eval regression vs reference annotation
+  │  scripts/06_local_keys.py  section-key audit: coverage gaps + tonicization directions
   ▼
 out/xxx.map.md · xxx.midi · xxx.analysis.md
 ```
@@ -103,7 +104,8 @@ out/xxx.map.md · xxx.midi · xxx.analysis.md
 | Bass / inversions | demucs bass + Basic Pitch (event-based) → octave fold → monophonize → sub-harmonic repair | slash chords (`C:maj/E`), `bass_share` gate |
 | Chord quality | BTC-170 → template fallback | maj7/min7/7/sus/dim/aug |
 | **Transcription** | **Basic Pitch per demucs stem** | **note events + MIDI per stem** |
-| Key / mode | chords + melody + phrase anchors + section weighting | candidates with evidence |
+| Key / mode | chords + melody + phrase anchors + **section-scoped** key, coverage-checked | per-section tonic, gaps where it fails |
+| Tonicization | `06_local_keys.py` (dominant → target resolutions) | direction (V/vi, V/III…), duration |
 | Modulations | per-section key estimation | `song.modulations`, per-segment keys |
 | Progressions | n-gram mining | repeated progressions with Roman numerals |
 | Evaluation | mir_eval (05_eval.py) | root/majmin/triad/sevenths/mirex |

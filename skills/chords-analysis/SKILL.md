@@ -170,6 +170,25 @@ All remote weights go through `scripts/models.py` + `models/manifest.json`:
    section's local key, per-section progression chains and harmonic rhythm, and
    repeated n-gram progressions ranked by frequency. This is the file to read
    for "和声地图"/"扒谱" style questions — don't re-derive it by hand.
+4c. **Local key audit + tonicization** (section keys are averages — verify them):
+   ```
+   <PY> -W ignore <skill-dir>/scripts/06_local_keys.py out/<name>.chords.json --outdir out
+   ```
+   Two independent outputs:
+   - **coverage gaps**: sliding windows where the section key stops explaining
+     the chord tones (coverage < 0.8 for ≥2 consecutive windows). Each gap gets
+     the best local alternative and a `departure` / `relative` label; `relative`
+     means the alternative shares the same pitch-class set (relative major/minor,
+     no real modulation). Boundaries are ±window; the `worst window` column is
+     the closest thing to the true pivot.
+   - **tonicizations**: `dominant → target` resolutions (root up a fourth),
+     excluding the section's own V→I and I→IV. `strong` = dominant 7th or a
+     major triad on a degree that should be minor/dim (secondary dominant);
+     `weak` needs context. Events inside a gap are marked with the gap's hint —
+     the section key has already been shown to fail there.
+   Writes `<name>.localkeys.md`. **Read this before writing about key**: a
+   section key with low confidence or `key_source: stable` is often an average
+   of two keys, and the gap table shows exactly where it breaks.
 5. **Analyze / answer**: read `out/<name>.chords.json` (for long songs read `stats`
    first, then read `chords` in slices as needed), then answer or write a report to
    `out/<name>.analysis.md` following the "LLM analysis conventions" in
@@ -186,14 +205,24 @@ All remote weights go through `scripts/models.py` + `models/manifest.json`:
 
 - Answers must be grounded in the actual JSON data; cite chords with timestamps
   (e.g. `1:23.5 (83.5s) G:maj`).
-- **Key**: `song.key` fuses three evidence sources (chord histogram, melody
-  pitch-class profile, phrase-ending anchors). Report `song.key_candidates` and
-  their `tonic_evidence` when the top two are close — that usually means a
-  relative major/minor or parallel-mode ambiguity. Never present a
-  near-related-key guess as certain.
-- **Sections**: use `structure.segments[].key/key_confidence` for section-local
-  keys; `song.modulations` lists every distinct key found. A low-confidence
-  segment key (short segments) should be described as uncertain.
+- **Key is per-section, never per-song.** `song.key` is a duration-weighted
+  summary, not an analysis unit — do not open a report with "this song is in X".
+  Establish the tonic for each section first, then say how each section departs
+  from it. A section can contain more than one tonic: `06_local_keys.py`'s
+  coverage gaps expose those, and a section label like "B♭ (0.60)" is usually an
+  average of two keys.
+- **Tonicization ≠ modulation.** A brief `V/x → x` that returns to the section
+  tonic is a tonicization; a sustained new tonic (and the section key that
+  follows) is a modulation. Report the direction (toward vi, toward III, …) and
+  how long it lasts. `06_local_keys.py` gives both, plus the return time.
+- **Key evidence**: `song.key` fuses chord histogram, melody pitch-class profile
+  and phrase-ending anchors. Report `song.key_candidates` and `tonic_evidence`
+  when the top two are close — that usually means a relative major/minor or
+  parallel-mode ambiguity. Never present a near-related-key guess as certain.
+- **Sections**: use `structure.segments[].key/key_confidence` as a starting
+  point, but treat `key_source: stable` as inherited, not measured — verify it
+  against the coverage gaps before quoting it. `song.modulations` lists every
+  distinct key found.
 - **Progressions**: prefer `04_map.py` output (`<name>.map.md`) — it already has
   the bar grid, Roman numerals and mined repeated n-grams. Do not re-derive the
   map by hand from raw chords.
